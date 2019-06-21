@@ -2,8 +2,8 @@
 
 from solargrid import solar_grid
 
-rows = 3
-cols = 3
+rows = 2
+cols = 2
 
 parameters = {'Voc': 1,         # Volts
               'Jsc': 1,      # A/cm^2

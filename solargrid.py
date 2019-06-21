@@ -27,6 +27,7 @@ class element:
 
         self.dP = 0
         self.target = None
+        self.sink = False
 
     def initialize(self):
         self._idx = [e.idx for e in self.neighbors]
@@ -37,53 +38,61 @@ class element:
         self._check = np.full(len(self.neighbors), True)
         
     def get_I(self, requestor, I, debt, dP):
-        if requestor:           # If self is not the sink
+        if not self.sink:       # If this is not the sink
             # Update state for the calling neighbor
             self._dP[self._idx.index(requestor)] = dP
             self._Iin[self._idx.index(requestor)] = I
             self._debt_in[self._idx.index(requestor)] = debt
 
         while any(self._check):
-            if requestor:       # If this is not the sink
+            if not self.sink:       # If this is not the sink
                 # update dP
-                self.dP = self._dP.max() + self.my_dP()
+#                self.dP = self._dP.max() + self.my_dP()
                 # update target, re-check all neighbors if it changed
-                old_target = self.target
+                self.old_target = self.target
                 self.target = self._idx[np.argmax(self._dP)]
-                if not old_target == self.target:
+                if not self.old_target == self.target:
                     self._check[:] = True
             to_query = np.argmax(self._check)
-            if self.target == self._idx[to_query]:
-                self._Iin[to_query],
-                self._debt_in[to_query],
-                self._dP[to_query] = \
-                self.neighbors[to_query].get_I(self.idx, self.my_I,
-                                               self.my_debt, self.dP)
-            else:
-                self._Iin[to_query],
-                self._debt_in[to_query],
-                self._dP[to_query] = \
-                self.neighbors[to_query].get_I(self.idx, 0, 0, self.dP)
-                
             self._check[to_query] = False
+            if self.target == self._idx[to_query]:
+                self._Iin[to_query],\
+                self._debt_in[to_query],\
+                self._dP[to_query] =\
+                self.neighbors[to_query].get_I(
+                        self.idx, self.my_I(), self.my_debt(), self.my_dP())
+            else:
+                self._Iin[to_query],\
+                self._debt_in[to_query],\
+                self._dP[to_query] =\
+                self.neighbors[to_query].get_I(
+                        self.idx, 0, 0, self.my_dP())
 
         if self.target == requestor:
-            return self.my_I, self.my_debt, self.dP
+            return self.my_I(), self.my_debt(), self.my_dP()
         else:
-            return 0, 0, self.dP
+            return 0, 0, self.my_dP()
 
     def my_dP(self):               # dP/dI given my current state
-        # TODO make implicit
-        return -(2 * self.my_I() * self.Psheet)
+        if self.sink:
+            return self.Voc - (2 * self.my_I() * self.Psheet)
+        else:
+            return self._dP.max() - (2 * self.my_I() * self.Psheet)
 
-    def my_I(self):
-        return self._current() + self._Iin.sum()
+    def my_I(self):  # TODO troubleshoot, returning zero?
+        if self.dP <= 0:
+            return 0
+        else:
+            return self._current() + self._Iin.sum()
 
     def _current(self):
         return self.Jsc * (self.a ** 2)
 
     def my_debt(self):
-        return (self.my_I() ** 2) * self.Psheet + self._debt_in.sum()
+        if self.dP <= 0:
+            return 0
+        else:
+            return (self.my_I() ** 2) * self.Psheet + self._debt_in.sum()
 
     def __repr__(self):
         return 'element ' + str(self.idx)
@@ -102,6 +111,7 @@ class solar_grid:
          for row in range(self.shape[0])]
 
         self.sink = self.elements[shape[0]//2][shape[1]//2]
+        self.sink.sink = True
         self.sink.dP = self.sink.Voc
 
         # self.iter_limit = 10
@@ -112,7 +122,7 @@ class solar_grid:
         # delta_P_old = None
         # running = True
         # iters = 0
-        I, debt = self.sink.get_I(requestor=None, I=0, debt=0, dP=V)
+        I, debt, _ = self.sink.get_I(requestor=None, I=0, debt=0, dP=V)
         # while running:
         #     I, delta_P = self.sink.get_I(self.sink.idx)
 
@@ -133,7 +143,7 @@ class solar_grid:
         return np.product(self.shape)
 
     def __repr__(self):
-        print(self.elements)
+        return 'Model with ' + str(self.shape) + ' elements'
 
     def _init_neighbors(self, element):
         idx = element.idx
