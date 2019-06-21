@@ -34,7 +34,7 @@ class element:
         # self._dP[:] = None
         self._Iin = self._dP.copy()
         self._debt_in = self._dP.copy()
-        self._check = np.true(len(self.neighbors))
+        self._check = np.full(len(self.neighbors), True)
         
     def get_I(self, requestor, I, debt, dP):
         if requestor:           # If self is not the sink
@@ -53,37 +53,37 @@ class element:
                 if not old_target == self.target:
                     self._check[:] = True
             to_query = np.argmax(self._check)
-            if target == self._idx[to_query]:
+            if self.target == self._idx[to_query]:
                 self._Iin[to_query],
                 self._debt_in[to_query],
-                self._dP[to_query] =
+                self._dP[to_query] = \
                 self.neighbors[to_query].get_I(self.idx, self.my_I,
                                                self.my_debt, self.dP)
             else:
                 self._Iin[to_query],
                 self._debt_in[to_query],
-                self._dP[to_query] =
+                self._dP[to_query] = \
                 self.neighbors[to_query].get_I(self.idx, 0, 0, self.dP)
                 
             self._check[to_query] = False
 
-        if target == requestor:
+        if self.target == requestor:
             return self.my_I, self.my_debt, self.dP
         else:
             return 0, 0, self.dP
 
     def my_dP(self):               # dP/dI given my current state
         # TODO make implicit
-        return -(2 * self.my_I * self.Psheet)
+        return -(2 * self.my_I() * self.Psheet)
 
     def my_I(self):
-        return self._current + self._Iin.sum()
+        return self._current() + self._Iin.sum()
 
     def _current(self):
         return self.Jsc * (self.a ** 2)
 
     def my_debt(self):
-        return (self.my_I ** 2) * self.Psheet + self._debt_in.sum()
+        return (self.my_I() ** 2) * self.Psheet + self._debt_in.sum()
 
     def __repr__(self):
         return 'element ' + str(self.idx)
