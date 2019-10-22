@@ -1,3 +1,4 @@
-autograd
+# autograd
 spyder
 seaborn
+numpy

@@ -1,154 +1,125 @@
-"""Dynamic grid solar electrode simulation. Core classes"""
+'''reworked solar grid elecrode simulation.'''
 
-# import autograd.numpy as np
-import numpy as np
+import logging
+# import pickle
+import autograd.numpy as np
+from autograd import grad
+from autograd import elementwise_grad as egrad
+
 
 class element:
-    '''One element of a solar grid model. Implement the basic interface.
-    Pass properties and operating conditions in the 'parameters' dictionary.'''
-    def __init__(self, idx, dPs, parameters):
-        self.idx = tuple(idx)          # This element's index
-        self.dPs = dPs                 # View of the global dP array
+    '''One solar cell element.'''
+    def __init__(self, idx, dPs, params):
+        self.idx = tuple(idx)   # This element's index
+        self.__dPs = dPs        # View of the global dP array
 
-        # FUTURE this can just retain a view of the parameters object
-        self.Voc = parameters['Voc']  # [V] PV open circuit voltage
-        self.Jsc = parameters['Jsc']  # [A/cm**2] PV solar current density
-        self.Pwire = parameters['Pwire']  # [Ohm-cm] Wire resistivity
-        self.Psheet = parameters['Psheet']  # [Ohm] /square sheet resistance
-        self.a = parameters['element_size']  # [cm]
-        self.w_min = parameters['w_min']  # [cm] smallest wire width
+        self.params = params    # View of global simulation params
 
-        # Neighbor node information
         self.neighbors = []
-        # self._idx = []
-        # self._dP = []
-        # self._Iin = []
-        # self._debt_in = []
-        # self._Iout = []
-        # self._debt_out = []
-
-        # self.dP = 0
         self.target = None
+        self.I = 0
         self.sink = False
 
-    def initialize(self):
-        self.nb_idx = [e.idx for e in self.neighbors]
-        # self._dP = np.zeros(len(self.neighbors))
-        # self._dP[:] = None
-        # self._Iin = self._dP.copy()
-        self._Iin = np.zeros(len(self.neighbors))
-        self._debt_in = self._Iin.copy()
-        # self._check = np.full(len(self.neighbors), True)
+        self.current_discount = overhead_power(params) / params['Voc']
 
-    def sinkify(self):          # TODO necessary?
-        self.sink = True
-        # self.neighbors.append(-1)
-        # self.nb_idx.append(-1)
-        # self._dP = np.append(self._dP, 1)
-        # self._Iin = np.append(self._Iin, 0)
-        # self._debt_in = np.append(self._debt_in, 0)
-        # self._check = np.append(self._check, False)
+        if self.current_discount > self.params['Jsol'] *\
+           np.square(self.params['a']):
+            raise ValueError('Power loss in sheet overwhelming power '+
+                             'collected. reduce the size or increase '+
+                             'the resolution of the simulation.')
+
+
+    def __get_dP(self):
+        return self.__dPs[self.idx]
+
+    def __set_dP(self, val):
+        self.__dPs[self.idx] = val
+
+    dP = property(__get_dP, __set_dP)
+
+
+    def power_loss(self, I):
+        power = power_loss_function(self.params)
+        power_given_w = lambda I: power(best_w(I, self.params), I)
+        return power_given_w(I)
+    
+    
+    def get_w(self):
+        return best_w(self.I, self.params)
+
 
     def get_I(self, requestor):
-        # self._dP[self.nb_idx.index(requestor)] = dP
-        # self._Iin[self.nb_idx.index(requestor)] = I
-        # self._debt_in[self.nb_idx.index(requestor)] = debt
-        for i, e in enumerate(self.nb_idx):  # e is a neighbor's global index
-            self.dPs[self.idx] = self.my_dP()
-            # TODO if not below, don't need this either
-            if self.sink or (requestor != e):  # and\
-#                    (self.dPs[e] < self.dPs[self.idx])): # TODO maybe don't need?
-                self._Iin[i], self._debt_in[i] =\
-                                            self.neighbors[i].get_I(self.idx)
-        self.target = self.nb_idx[np.argmax(self.dPs[self.nb_idx])]
-        if (self.dPs[self.target] < 0):  # TODO Need to add me < target req.?
-            self.target = None
-#         while any(self._check):
-# #            if not self.sink:       # If this is not the sink
-#                 # update dP
-# #                self.dP = self._dP.max() + self.my_dP()
-#             # update target, re-check all neighbors if it changed
-#             self.old_target = self.target
-#             self.target = self.nb_idx[np.argmax(self._dP)]
-# #            if not self.old_target == self.target:
-# #                self._check[:] = True
+        if requestor == self.target:
+            inputs = [e.get_I(self) for e in self.neighbors if e != requestor]
+                        
+            self.I = np.sum([row[0] for row in inputs]) +\
+                     self.params['Jsol'] * np.square(self.params['a']) -\
+                     self.current_discount
+            debt = np.sum([row[1] for row in inputs]) + self.power_loss(self.I)
             
-#             # Handshake the next neighbor on the checklist. Send current and 
-#             # debt if this is the current target.
-#             check_idx = np.argmax(self._check)
-#             if self.target == self.nb_idx[check_idx]:
-#                 self._Iin[check_idx],\
-#                 self._debt_in[check_idx],\
-#                 self._dP[check_idx] =\
-#                 self.neighbors[check_idx].get_I(
-#                         self.idx, self.my_dP())
-#             else:
-#                 self._Iin[check_idx],\
-#                 self._debt_in[check_idx],\
-#                 self._dP[check_idx] =\
-#                 self.neighbors[check_idx].get_I(
-#                         self.idx, self.my_dP())
-#             self._check[check_idx] = False
+            return self.I, debt
+        return 0, 0
 
-        if (self.target == requestor) and (self.my_dP() > 0):
-            return self.my_I(), self.my_debt()
+
+    def update_dP(self, requestor):
+        if requestor is None:
+            dP = self.params['Voc']
         else:
-            return 0, 0
+            dP = requestor.dP
 
-    def my_dP(self):               # dP/dI given my current state
-        if self.sink:
-            return self.Voc - (2 * self.my_I() * self.Psheet)
-        else:
-            return self.dPs[self.nb_idx].max() - (2 * self.my_I() * self.Psheet)
+        if requestor == self.target:
+#            f_of_I = lambda I: self.power_loss(I)
+#            self.dP = dP - grad(f_of_I)(self.I)
+            self.dP = dP - grad(self.power_loss)(float(self.I) + 1e-20)
+            [e.update_dP(self) for e in self.neighbors]
 
-    def my_I(self):
-        return self._current() + self._Iin.sum()
 
-    def _current(self):
-        return self.Jsc * (self.a ** 2)
-
-    def my_debt(self):
-        # if self.dP <= 0:
-        #     return 0
-        # else:
-        return (self.my_I() ** 2) * self.Psheet + self._debt_in.sum()
-
-    def __repr__(self):
-        return 'element ' + str(self.idx)
+    def update_target(self):
+        if not self.sink:
+            local_dPs = [e.dP for e in self.neighbors]
+            if any(np.greater(local_dPs, 0)):
+                self.target = self.neighbors[np.argmax(local_dPs)]
+            else:
+                self.target = None
 
 
 class solar_grid:
-    '''Current-transporting grid model using a square grid of elements.'''
-    def __init__(self, shape, parameters):
-        self.shape = [shape[0], shape[1]]
+    '''Current-gathering grid model'''
+    def __init__(self, res, params):
+        params['a'] = params['L'] / res
+        self.params = params
+
+        self.shape = [res, res]
+
         self.dPs = np.zeros(self.shape)
-        self.elements = [[element((row, col), self.dPs, parameters)
+        self.elements = [[element((row, col), self.dPs, self.params)
                           for col in range(self.shape[1])]
                          for row in range(self.shape[0])]
 
-        [[self._init_neighbors(self.elements[row][col])
+        [[self.init_neighbors(self.elements[row][col])
           for col in range(self.shape[1])]
          for row in range(self.shape[0])]
 
-        self.sink = self.elements[shape[0]//2][shape[1]//2]
-        self.sink.sinkify()
-        # self.sink.dP = self.sink.Voc
+        self.sink = self.elements[0][0]
+        self.sink.sink = True
 
-        # self.iter_limit = 10
 
     def power(self):
-        V = self.sink.Voc
-        # I, debt, _ = self.sink.get_I(requestor=None, I=0, debt=0, dP=V)
+        self.sink.update_dP(requestor=None)
+        [[e.update_target() for e in row] for row in self.elements]
         I, debt = self.sink.get_I(requestor=None)
-        return I * V - debt
+        return I * self.params['Voc'] - debt
+
 
     def __len__(self):
         return np.product(self.shape)
 
+
     def __repr__(self):
         return 'Model with ' + str(self.shape) + ' elements'
 
-    def _init_neighbors(self, element):
+
+    def init_neighbors(self, element):
         idx = element.idx
         if idx[0] > 0:
             element.neighbors.append(self.elements[idx[0] - 1][idx[1]])
@@ -158,28 +129,49 @@ class solar_grid:
             element.neighbors.append(self.elements[idx[0]][idx[1] - 1])
         if idx[1] < (self.shape[1] - 1):
             element.neighbors.append(self.elements[idx[0]][idx[1] + 1])
-        element.initialize()
-        # return None
+        np.random.shuffle(element.neighbors)
+
+
+def power_loss_function(params):
+    def wire_area(w):
+        h = np.multiply(w, params['h_scale']) + params['h0']
+        return h * w
+
+    def power(w, I):
+        shadow_loss = np.multiply(params['Voc'] * params['Jsol'] * \
+                                  params['a'], w)
+
+        wire_loss = np.square(I) * params['Pwire'] * params['a'] /\
+                    (wire_area(w) + 1e-12)
+
+        sheet_loss = np.square(I) * params['Rsheet']
+
+        return np.minimum(sheet_loss, shadow_loss + wire_loss)
+
+    return power
+
+
+def best_w(I, params):
+    return ((2 * (I ** 2) * params['Pwire']) /\
+            (params['Voc'] * params['Jsol'] * params['h_scale'])) ** (1/3.)
+
+
+def overhead_power(params):
+    '''don't use this. power lost in sheet getting to grid, but use discounted
+    current instead.'''
+    return (params['Jsol']**2 * params['Rsheet'] * params['a']**4) / 12
+
 
 if __name__ == '__main__':
-    rows = 2
-    cols = 2
-    
-    parameters = {'Voc': 1,         # Volts
-                  'Jsc': 1,      # A/cm^2
-                  'Pwire': 10**-5,  # Ohm-cm
-                  'Psheet': 0.01,    # Ohm/square
-                  'element_size': 1,  # cm element size
-                  'w_min': 1e-4}         # cm smallest wire thickness
-    # parameters = {'Voc': 1,         # Volts
-    #               'Jsc': 0.02,      # A/cm^2
-    #               'Pwire': 10**-5,  # Ohm-cm
-    #               'Psheet': 100,    # Ohm/square
-    #               'element_size': 200e-4,  # cm element size
-    #               'w_min': 1e-4}         # cm smallest wire thickness
-    
-    cell_area = rows * cols * parameters['element_size']  # cm**2
-    ideal_power = parameters['Jsc'] * cell_area * parameters['Voc']
+    from utils import param_loader
+#    from matplotlib import pyplot as plt
 
-    model = solar_grid((rows, cols), parameters)
-    power = model.power()
+    params = param_loader('./recipes/10 cm test.csv')
+    params['a'] = params['L'] / 100
+
+    I = 1
+    power = power_loss_function(params)
+    power_w = lambda I: power(best_w(I, params), I)
+    dPdI = egrad(power_w)
+    
+    grid = solar_grid(2, params)
