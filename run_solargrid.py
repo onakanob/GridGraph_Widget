@@ -55,12 +55,18 @@ if __name__ == '__main__':
             iters += 1
             count += 1
             if power > best_power:
-                with open(pkl_name, 'wb') as f:
-                    pickle.dump(model.dPs, f)
+                try:
+                    with open(pkl_name, 'wb') as f:
+                        pickle.dump(model.dPs, f)
+                except Exception as e:
+                    logging.error('Model failed save to pickle')
+                    logging.error(e)
+
                 best_power = power
                 count = 0
                 # logging.info('Saved best model, iter %.0f', iters-1)
             try:
+                # Error here: reshape model.elements before passing it on! TODO
                 plot_elements(model.elements,
                               filename=os.path.join(save_dir,
                                                     str(iters).zfill(4) + '.png'),

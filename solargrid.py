@@ -10,7 +10,8 @@ from autograd import elementwise_grad as egrad
 class element:
     '''One solar cell element.'''
     def __init__(self, idx, dPs, params):
-        self.idx = tuple(idx)   # This element's index
+        self.idx = idx
+        # self.idx = tuple(idx)   # This element's index
         self.__dPs = dPs        # View of the global dP array
 
         self.params = params    # View of global simulation params
@@ -62,6 +63,7 @@ class element:
 
 
     def update_dP(self, requestor):
+        # TODO move this inside the if statement below?
         if requestor is None:
             dP = self.params['Voc']
         else:
@@ -91,16 +93,23 @@ class solar_grid:
 
         self.shape = [res, res]
 
-        self.dPs = np.zeros(self.shape)
-        self.elements = [[element((row, col), self.dPs, self.params)
-                          for col in range(self.shape[1])]
-                         for row in range(self.shape[0])]
+        self.dPs = np.zeros(res**2)
+        self.elements = [element(i, self.dPs, self.params) for i in
+                         range(res**2)]
+        self.idx_map = np.arange(res**2).reshape(res, res)
+        [self.init_neighbors(e) for e in self.elements]
+        # self.elements = [[element((row, col), self.dPs, self.params)
+        #                   for col in range(self.shape[1])]
+        #                  for row in range(self.shape[0])]
 
-        [[self.init_neighbors(self.elements[row][col])
-          for col in range(self.shape[1])]
-         for row in range(self.shape[0])]
+        # [[self.init_neighbors(self.elements[row][col])
+        #   for col in range(self.shape[1])]
+        #  for row in range(self.shape[0])]
 
-        self.sink = self.elements[int(self.shape[0]/2)][0]
+        sink_idx = self.idx_map[int(res/2), 0]
+        self.sink = self.elements[sink_idx]
+
+        # self.sink = self.elements[int(self.shape[0]/2)][0]
         self.sink.sink = True
         
         # TEMP
@@ -111,7 +120,8 @@ class solar_grid:
     def power(self):
         self.sink.update_dP(requestor=None)
         # self.sink2.update_dP(requestor=None)  # TEMP
-        [[e.update_target() for e in row] for row in self.elements]
+        # [[e.update_target() for e in row] for row in self.elements]
+        [e.update_target() for e in self.elements]
         I, debt = self.sink.get_I(requestor=None)
         # I2, debt2 = self.sink2.get_I(requestor=None)  # TEMP
         # y = I * self.params['Voc'] - debt + I2 * self.params['Voc'] - debt2
@@ -128,15 +138,24 @@ class solar_grid:
 
 
     def init_neighbors(self, element):
-        idx = element.idx
+        # idx = element.idx
+        idx = np.where(self.idx_map == element.idx)
         if idx[0] > 0:
-            element.neighbors.append(self.elements[idx[0] - 1][idx[1]])
+            nb_idx = self.idx_map[idx[0] - 1, idx[1]][0]
+            element.neighbors.append(self.elements[nb_idx])
+            # element.neighbors.append(self.elements[idx[0] - 1][idx[1]])
         if idx[0] < (self.shape[0] - 1):
-            element.neighbors.append(self.elements[idx[0] + 1][idx[1]])
+            nb_idx = self.idx_map[idx[0] + 1, idx[1]][0]
+            element.neighbors.append(self.elements[nb_idx])
+            # element.neighbors.append(self.elements[idx[0] + 1][idx[1]])
         if idx[1] > 0:
-            element.neighbors.append(self.elements[idx[0]][idx[1] - 1])
+            nb_idx = self.idx_map[idx[0], idx[1] - 1][0]
+            element.neighbors.append(self.elements[nb_idx])
+            # element.neighbors.append(self.elements[idx[0]][idx[1] - 1])
         if idx[1] < (self.shape[1] - 1):
-            element.neighbors.append(self.elements[idx[0]][idx[1] + 1])
+            nb_idx = self.idx_map[idx[0], idx[1] + 1][0]
+            element.neighbors.append(self.elements[nb_idx])
+            # element.neighbors.append(self.elements[idx[0]][idx[1] + 1])
         np.random.shuffle(element.neighbors)
 
 
