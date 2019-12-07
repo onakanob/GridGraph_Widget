@@ -1,6 +1,6 @@
 '''reworked solar grid elecrode simulation.'''
 
-import logging
+# import logging
 # import pickle
 import autograd.numpy as np
 from autograd import grad
@@ -100,14 +100,22 @@ class solar_grid:
           for col in range(self.shape[1])]
          for row in range(self.shape[0])]
 
-        self.sink = self.elements[0][0]
+        self.sink = self.elements[int(self.shape[0]/2)][0]
         self.sink.sink = True
+        
+        # TEMP
+        # self.sink2 = self.elements[int(self.shape[0])-1][int(self.shape[1])-1]
+        # self.sink2.sink = True
 
 
     def power(self):
         self.sink.update_dP(requestor=None)
+        # self.sink2.update_dP(requestor=None)  # TEMP
         [[e.update_target() for e in row] for row in self.elements]
         I, debt = self.sink.get_I(requestor=None)
+        # I2, debt2 = self.sink2.get_I(requestor=None)  # TEMP
+        # y = I * self.params['Voc'] - debt + I2 * self.params['Voc'] - debt2
+        # return y
         return I * self.params['Voc'] - debt
 
 

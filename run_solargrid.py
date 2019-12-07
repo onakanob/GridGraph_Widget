@@ -18,18 +18,20 @@ if __name__ == '__main__':
     parser.add_argument('--log_dir', type=str,
                         default='./TEMP/',
                         help='Output directory.')
+    parser.add_argument('--resolutions', type=str,
+                        default='20',
+                        help='Comma-delim list of grid side lengths to simulate.')
 
     args = parser.parse_args()
     params = param_loader(args.recipe_file)
+    resolutions = [int(item) for item in args.resolutions.split(',')]
 
     if not os.path.exists(args.log_dir):
         os.makedirs(args.log_dir)
     set_logger(os.path.join(args.log_dir, 'log.txt'))
 
-    RESOLUTIONS = [20, 40, 60]
-    # RESOLUTIONS = [25]
-    
-    for res in RESOLUTIONS:
+    # RESOLUTIONS = [20, 40, 60]
+    for res in resolutions:
         t = time.time()
         model = solar_grid(res, params)
 
