@@ -1,7 +1,7 @@
 '''reworked solar grid elecrode simulation.'''
 
-# import logging
-# import pickle
+import logging
+
 import autograd.numpy as np
 from autograd import grad
 from autograd import elementwise_grad as egrad
@@ -9,16 +9,17 @@ from autograd import elementwise_grad as egrad
 
 class element:
     '''One solar cell element.'''
-    def __init__(self, idx, dPs, params):
-        self.idx = idx
-        # self.idx = tuple(idx)   # This element's index
-        self.__dPs = dPs        # View of the global dP array
+    def __init__(self, idx, coords, A, G, elements, Is, debts, dPs, params):
+        self.idx = idx             # My global index
+        self.coords = coords       # My simulation coordinates
+        self.__elements = elements  # View of the global element array
+        self.__Is = Is              # View of the global current array
+        self.__debts = debts        # View of the global debt array
+        self.__dPs = dPs            # View of the global dP array
+        self.__A = A                # View of the adjacency matrix
+        self.__G = G                # View of the subgraph matrix
+        self.params = params        # View of global simulation params
 
-        self.params = params    # View of global simulation params
-
-        self.neighbors = []
-        self.target = None
-        self.I = 0
         self.sink = False
 
         self.current_discount = overhead_power(params) / params['Voc']
@@ -30,21 +31,58 @@ class element:
                              'the resolution of the simulation.')
 
 
+    # PROPERTIES #
+    def __get_I(self):
+        return self.__Is[self.idx]
+    def __set_I(self, val):
+        self.__Is[self.idx] = val
+    I = property(__get_I, __set_I)
+
+    def __get_debt(self):
+        return self.__debts[self.idx]
+    def __set_debt(self, val):
+        self.__debts[self.idx] = val
+    debt = property(__get_debt, __set_debt)
+
     def __get_dP(self):
         return self.__dPs[self.idx]
-
     def __set_dP(self, val):
         self.__dPs[self.idx] = val
-
     dP = property(__get_dP, __set_dP)
+
+    def __get_neighbors(self):
+        return self.__elements[self.__A[self.idx, :]]
+    def __set_neighbors(self, indices):
+        self.__A[self.idx, indices] = True
+    neighbors = property(__get_neighbors, __set_neighbors)
+
+    def __get_donors(self):
+        return self.__elements[self.__G[self.idx, :]]
+    donors = property(__get_donors)
+
+    def __get_target(self):
+        # target = np.where(self.__G[:, self.idx])  # Array of array of one index
+        target = self.__elements[self.__G[:, self.idx]]
+        if not target.size > 0:
+            return None
+        return target[0]
+    def __set_target(self, e):
+        if self.target is not None:
+            self.__G[self.target.idx, self.idx] = False
+        if e is not None:
+            self.__G[e.idx, self.idx] = True
+            if self.sink:
+                logging.error('Whoops, a sink was assigned a target.' +
+                              ' That can\'t be right.')
+    target = property(__get_target, __set_target)
 
 
     def power_loss(self, I):
         power = power_loss_function(self.params)
         power_given_w = lambda I: power(best_w(I, self.params), I)
         return power_given_w(I)
-    
-    
+
+
     def get_w(self):
         return best_w(self.I, self.params)
 
@@ -56,31 +94,30 @@ class element:
             self.I = np.sum([row[0] for row in inputs]) +\
                      self.params['Jsol'] * np.square(self.params['a']) -\
                      self.current_discount
-            debt = np.sum([row[1] for row in inputs]) + self.power_loss(self.I)
-            
-            return self.I, debt
+            self.debt = np.sum([row[1] for row in inputs]) + self.power_loss(self.I)
+
+            return self.I, self.debt
         return 0, 0
 
 
     def update_dP(self, requestor):
-        # TODO move this inside the if statement below?
-        if requestor is None:
-            dP = self.params['Voc']
-        else:
-            dP = requestor.dP
-
         if requestor == self.target:
-#            f_of_I = lambda I: self.power_loss(I)
-#            self.dP = dP - grad(f_of_I)(self.I)
-            self.dP = dP - grad(self.power_loss)(float(self.I) + 1e-20)
-            [e.update_dP(self) for e in self.neighbors]
+            if requestor is None:
+                dP = self.params['Voc']
+            else:
+                dP = requestor.dP
 
+            self.dP = dP - grad(self.power_loss)(float(self.I) + 1e-20)
+            for e in self.neighbors:
+                e.update_dP(self)
 
     def update_target(self):
         if not self.sink:
-            local_dPs = [e.dP for e in self.neighbors]
+            neighbors = self.neighbors
+            np.random.shuffle(neighbors)
+            local_dPs = [e.dP for e in neighbors]
             if any(np.greater(local_dPs, 0)):
-                self.target = self.neighbors[np.argmax(local_dPs)]
+                self.target = neighbors[np.argmax(local_dPs)]
             else:
                 self.target = None
 
@@ -93,40 +130,54 @@ class solar_grid:
 
         self.shape = [res, res]
 
+        # Containers for current set of current, debt, and power gradients.
+        self.elements = np.empty(res**2, dtype=object)
+        self.Is = np.zeros(res**2)
+        self.debts = np.zeros(res**2)
         self.dPs = np.zeros(res**2)
-        self.elements = [element(i, self.dPs, self.params) for i in
-                         range(res**2)]
-        self.idx_map = np.arange(res**2).reshape(res, res)
-        [self.init_neighbors(e) for e in self.elements]
-        # self.elements = [[element((row, col), self.dPs, self.params)
-        #                   for col in range(self.shape[1])]
-        #                  for row in range(self.shape[0])]
 
-        # [[self.init_neighbors(self.elements[row][col])
-        #   for col in range(self.shape[1])]
-        #  for row in range(self.shape[0])]
+        # Adjacency map defines the grid on which the simulation will run. This
+        # defines each node's neighborhood and is STATIC.
+        self.A = np.zeros((res**2, res**2)).astype(bool)
+        
+        # Graph map defines the particular graph that is being solved right
+        # now. This defines each node's donors and target and is DYNAMIC.
+        self.G = np.zeros((res**2, res**2)).astype(bool)
+
+        # Map out the node indices based on location in a square 2D grid:
+        self.idx_map = np.arange(res**2).reshape(res, res)
+        for i in range(res**2):
+            self.elements[i] = element(idx=i,
+                                       coords=np.where(self.idx_map == i),
+                                       A=self.A,
+                                       G=self.G,
+                                       elements=self.elements,
+                                       Is=self.Is,
+                                       debts=self.debts,
+                                       dPs=self.dPs,
+                                       params=self.params)
+        for e in self.elements:
+            self.init_neighbors(e)
 
         sink_idx = self.idx_map[int(res/2), 0]
         self.sink = self.elements[sink_idx]
-
-        # self.sink = self.elements[int(self.shape[0]/2)][0]
         self.sink.sink = True
         
-        # TEMP
+        # Second Sink
         # self.sink2 = self.elements[int(self.shape[0])-1][int(self.shape[1])-1]
         # self.sink2.sink = True
 
 
     def power(self):
         self.sink.update_dP(requestor=None)
-        # self.sink2.update_dP(requestor=None)  # TEMP
-        # [[e.update_target() for e in row] for row in self.elements]
+        # self.sink2.update_dP(requestor=None)  # Second Sink
         [e.update_target() for e in self.elements]
         I, debt = self.sink.get_I(requestor=None)
-        # I2, debt2 = self.sink2.get_I(requestor=None)  # TEMP
+        # Second Sink
+        # I2, debt2 = self.sink2.get_I(requestor=None)
         # y = I * self.params['Voc'] - debt + I2 * self.params['Voc'] - debt2
-        # return y
-        return I * self.params['Voc'] - debt
+        y = I * self.params['Voc'] - debt
+        return y
 
 
     def __len__(self):
@@ -135,28 +186,24 @@ class solar_grid:
 
     def __repr__(self):
         return 'Model with ' + str(self.shape) + ' elements'
+    
+    
+    def element_grid(self):
+        return np.reshape(self.elements, self.shape)
 
 
     def init_neighbors(self, element):
-        # idx = element.idx
         idx = np.where(self.idx_map == element.idx)
+        neighbors = []
         if idx[0] > 0:
-            nb_idx = self.idx_map[idx[0] - 1, idx[1]][0]
-            element.neighbors.append(self.elements[nb_idx])
-            # element.neighbors.append(self.elements[idx[0] - 1][idx[1]])
+            neighbors.append(self.idx_map[idx[0] - 1, idx[1]][0])
         if idx[0] < (self.shape[0] - 1):
-            nb_idx = self.idx_map[idx[0] + 1, idx[1]][0]
-            element.neighbors.append(self.elements[nb_idx])
-            # element.neighbors.append(self.elements[idx[0] + 1][idx[1]])
+            neighbors.append(self.idx_map[idx[0] + 1, idx[1]][0])
         if idx[1] > 0:
-            nb_idx = self.idx_map[idx[0], idx[1] - 1][0]
-            element.neighbors.append(self.elements[nb_idx])
-            # element.neighbors.append(self.elements[idx[0]][idx[1] - 1])
+            neighbors.append(self.idx_map[idx[0], idx[1] - 1][0])
         if idx[1] < (self.shape[1] - 1):
-            nb_idx = self.idx_map[idx[0], idx[1] + 1][0]
-            element.neighbors.append(self.elements[nb_idx])
-            # element.neighbors.append(self.elements[idx[0]][idx[1] + 1])
-        np.random.shuffle(element.neighbors)
+            neighbors.append(self.idx_map[idx[0], idx[1] + 1][0])
+        element.neighbors = neighbors
 
 
 def power_loss_function(params):
@@ -191,7 +238,6 @@ def overhead_power(params):
 
 if __name__ == '__main__':
     from utils import param_loader
-#    from matplotlib import pyplot as plt
 
     params = param_loader('./recipes/10 cm test.csv')
     params['a'] = params['L'] / 100

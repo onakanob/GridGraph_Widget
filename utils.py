@@ -32,13 +32,13 @@ def plot_elements(elements, filename=None, w_scale=2, i_scale=1):
     for row in elements:
         for e in row:
             if e.sink:
-                ax.plot(e.idx[0], e.idx[1], marker='x',
+                ax.plot(e.coords[0], e.coords[1], marker='x',
                         color='green', markersize=26)
             elif e.target is not None:
-                x = [e.idx[0], e.target.idx[0]]
-                y = [e.idx[1], e.target.idx[1]]
+                x = [e.coords[0], e.target.coords[0]]
+                y = [e.coords[1], e.target.coords[1]]
                 w = e.get_w()
-                # For flux scaling?:
+                # For flux scaling:
                 # J = e.my_I()/(w)  # For constant width
                 # J = e.I/(w**2)  # For constant area
                 fade = i_scale * e.I / max_I

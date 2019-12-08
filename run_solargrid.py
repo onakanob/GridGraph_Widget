@@ -29,8 +29,8 @@ if __name__ == '__main__':
     if not os.path.exists(args.log_dir):
         os.makedirs(args.log_dir)
     set_logger(os.path.join(args.log_dir, 'log.txt'))
+    logging.info('Logging to dir %s', args.log_dir)
 
-    # RESOLUTIONS = [20, 40, 60]
     for res in resolutions:
         t = time.time()
         model = solar_grid(res, params)
@@ -64,10 +64,8 @@ if __name__ == '__main__':
 
                 best_power = power
                 count = 0
-                # logging.info('Saved best model, iter %.0f', iters-1)
             try:
-                # Error here: reshape model.elements before passing it on! TODO
-                plot_elements(model.elements,
+                plot_elements(model.element_grid(),
                               filename=os.path.join(save_dir,
                                                     str(iters).zfill(4) + '.png'),
                               w_scale=16, i_scale=1)
@@ -79,7 +77,6 @@ if __name__ == '__main__':
                      power)
         logging.info('Run took %.0f seconds', time.time() - t)
         logging.info('The smallest wire width is %.6f cm.',
-                     np.min([[e.get_w() for e in row]
-                             for row in model.elements]))
+                     np.min([e.get_w() for e in model.elements]))
 
         make_gif(save_dir)
