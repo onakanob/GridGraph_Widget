@@ -21,6 +21,8 @@ if __name__ == '__main__':
     parser.add_argument('--resolutions', type=str,
                         default='20',
                         help='Comma-delim list of grid side lengths to simulate.')
+    parser.add_argument('--save_video', action='store_true', default=True,
+                        help='Save all frames and create video of simulation?')
 
     args = parser.parse_args()
     params = param_loader(args.recipe_file)
@@ -64,6 +66,16 @@ if __name__ == '__main__':
 
                 best_power = power
                 count = 0
+            if args.save_video:
+                try:
+                    plot_elements(model.element_grid(),
+                                  filename=os.path.join(save_dir,
+                                                        str(iters).zfill(4) + '.png'),
+                                  w_scale=16, i_scale=1)
+                except Exception as e:
+                    logging.error('Image failed to save.')
+                    logging.error(e)
+        if not args.save_video:
             try:
                 plot_elements(model.element_grid(),
                               filename=os.path.join(save_dir,
@@ -72,6 +84,7 @@ if __name__ == '__main__':
             except Exception as e:
                 logging.error('Image failed to save.')
                 logging.error(e)
+            
 
         logging.info('Completed simulation: Model predicts %.4fW output.',
                      power)
@@ -79,4 +92,5 @@ if __name__ == '__main__':
         logging.info('The smallest wire width is %.6f cm.',
                      np.min([e.get_w() for e in model.elements]))
 
-        make_gif(save_dir)
+        if args.save_video:
+            make_gif(save_dir)

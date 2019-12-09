@@ -1,10 +1,13 @@
 '''reworked solar grid elecrode simulation.'''
 
 import logging
+from collections import deque
 
 import autograd.numpy as np
 from autograd import grad
 from autograd import elementwise_grad as egrad
+
+# from utils import memoize
 
 
 class element:
@@ -22,13 +25,19 @@ class element:
 
         self.sink = False
 
-        self.current_discount = overhead_power(params) / params['Voc']
+        current_discount = overhead_power(params) / params['Voc']
+        self.current_generated = self.params['Jsol'] *\
+            np.square(self.params['a']) - current_discount
 
-        if self.current_discount > self.params['Jsol'] *\
-           np.square(self.params['a']):
+        if current_discount >\
+           self.params['Jsol'] * np.square(self.params['a']):
             raise ValueError('Power loss in sheet overwhelming power '+
                              'collected. reduce the size or increase '+
                              'the resolution of the simulation.')
+
+        power = power_loss_function(self.params)
+        self.power_loss = lambda I: power(best_w(I, self.params), I)
+        self.grad_func = grad(self.power_loss)
 
 
     # PROPERTIES #
@@ -61,7 +70,6 @@ class element:
     donors = property(__get_donors)
 
     def __get_target(self):
-        # target = np.where(self.__G[:, self.idx])  # Array of array of one index
         target = self.__elements[self.__G[:, self.idx]]
         if not target.size > 0:
             return None
@@ -77,39 +85,25 @@ class element:
     target = property(__get_target, __set_target)
 
 
-    def power_loss(self, I):
-        power = power_loss_function(self.params)
-        power_given_w = lambda I: power(best_w(I, self.params), I)
-        return power_given_w(I)
-
-
     def get_w(self):
         return best_w(self.I, self.params)
 
 
-    def get_I(self, requestor):
-        if requestor == self.target:
-            inputs = [e.get_I(self) for e in self.neighbors if e != requestor]
-                        
-            self.I = np.sum([row[0] for row in inputs]) +\
-                     self.params['Jsol'] * np.square(self.params['a']) -\
-                     self.current_discount
-            self.debt = np.sum([row[1] for row in inputs]) + self.power_loss(self.I)
+    def update_I(self):
+        inputs = [e.I for e in self.donors]  # can be vectorized
+        debts = [e.debt for e in self.donors]  # can also be vectorized
 
-            return self.I, self.debt
-        return 0, 0
+        self.I = np.sum(inputs) + self.current_generated
+        self.debt = np.sum(debts) + self.power_loss(self.I)
 
 
-    def update_dP(self, requestor):
-        if requestor == self.target:
-            if requestor is None:
-                dP = self.params['Voc']
-            else:
-                dP = requestor.dP
+    def update_dP(self):
+        if self.target is None:
+            dP = self.params['Voc']
+        else:
+            dP = self.target.dP
+        self.dP = dP - self.grad_func(float(self.I) + 1e-20)
 
-            self.dP = dP - grad(self.power_loss)(float(self.I) + 1e-20)
-            for e in self.neighbors:
-                e.update_dP(self)
 
     def update_target(self):
         if not self.sink:
@@ -159,35 +153,42 @@ class solar_grid:
         for e in self.elements:
             self.init_neighbors(e)
 
-        sink_idx = self.idx_map[int(res/2), 0]
+        # sink_idx = self.idx_map[int(res/2), 0]
+        sink_idx = self.idx_map[0, 0]
         self.sink = self.elements[sink_idx]
         self.sink.sink = True
-        
-        # Second Sink
-        # self.sink2 = self.elements[int(self.shape[0])-1][int(self.shape[1])-1]
-        # self.sink2.sink = True
 
 
     def power(self):
-        self.sink.update_dP(requestor=None)
-        # self.sink2.update_dP(requestor=None)  # Second Sink
-        [e.update_target() for e in self.elements]
-        I, debt = self.sink.get_I(requestor=None)
-        # Second Sink
-        # I2, debt2 = self.sink2.get_I(requestor=None)
-        # y = I * self.params['Voc'] - debt + I2 * self.params['Voc'] - debt2
-        y = I * self.params['Voc'] - debt
+        Q = self.walk_graph()
+        for i in Q:
+            self.elements[i].update_dP()
+        for e in self.elements:
+            e.update_target()
+        for i in reversed(Q):
+            self.elements[i].update_I()
+        y = self.sink.I * self.params['Voc'] - self.sink.debt
         return y
+
+
+    def walk_graph(self):
+        Q = deque()
+        S = deque()
+        point = self.sink.idx
+        while point is not None:
+            Q.append(point)
+            for e in self.elements[point].donors:
+                S.append(e.idx)
+            point = safepop(S)
+        return Q
 
 
     def __len__(self):
         return np.product(self.shape)
 
-
     def __repr__(self):
         return 'Model with ' + str(self.shape) + ' elements'
-    
-    
+
     def element_grid(self):
         return np.reshape(self.elements, self.shape)
 
@@ -203,6 +204,15 @@ class solar_grid:
             neighbors.append(self.idx_map[idx[0], idx[1] - 1][0])
         if idx[1] < (self.shape[1] - 1):
             neighbors.append(self.idx_map[idx[0], idx[1] + 1][0])
+        # 8-fold connections...
+        # if (idx[0] > 0) & (idx[1] > 0):
+        #     neighbors.append(self.idx_map[idx[0] - 1, idx[1] - 1][0])
+        # if (idx[0] > 0) & (idx[1] < (self.shape[1] - 1)):
+        #     neighbors.append(self.idx_map[idx[0] - 1, idx[1] + 1][0])
+        # if (idx[0] < (self.shape[0] - 1)) & (idx[1] > 0):
+        #     neighbors.append(self.idx_map[idx[0] + 1, idx[1] - 1][0])
+        # if (idx[0] < (self.shape[0] - 1)) & (idx[1] < (self.shape[1] - 1)):
+        #     neighbors.append(self.idx_map[idx[0] + 1, idx[1] + 1][0])
         element.neighbors = neighbors
 
 
@@ -234,6 +244,12 @@ def overhead_power(params):
     '''don't use this. power lost in sheet getting to grid, but use discounted
     current instead.'''
     return (params['Jsol']**2 * params['Rsheet'] * params['a']**4) / 12
+
+
+def safepop(S):
+    if len(S) > 0:
+        return S.pop()
+    return None
 
 
 if __name__ == '__main__':
