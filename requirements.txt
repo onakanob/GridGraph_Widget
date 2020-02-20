@@ -1,4 +1,0 @@
-# autograd
-spyder
-seaborn
-numpy

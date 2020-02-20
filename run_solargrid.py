@@ -1,6 +1,6 @@
 import os
 import time
-import pickle
+#import pickle
 import logging
 import argparse
 
@@ -13,15 +13,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--recipe_file', type=str,
-                        default='./recipes/2 cm test.csv',
+                        default='./recipes/5 cm test.csv',
                         help='CSV containing run parameters.')
     parser.add_argument('--log_dir', type=str,
                         default='./TEMP/',
                         help='Output directory.')
     parser.add_argument('--resolutions', type=str,
                         default='20',
+                        # default='120',
                         help='Comma-delim list of grid side lengths to simulate.')
-    parser.add_argument('--save_video', action='store_true', default=True,
+    parser.add_argument('--save_video', action='store_true', default=False,
                         help='Save all frames and create video of simulation?')
 
     args = parser.parse_args()
@@ -44,6 +45,7 @@ if __name__ == '__main__':
         old_power = None
         power = 0
         max_iters = 1000
+        # max_iters = 5
         iters = 0
         count_lim = 20
         count = 0
@@ -57,12 +59,12 @@ if __name__ == '__main__':
             iters += 1
             count += 1
             if power > best_power:
-                try:
-                    with open(pkl_name, 'wb') as f:
-                        pickle.dump(model.dPs, f)
-                except Exception as e:
-                    logging.error('Model failed save to pickle')
-                    logging.error(e)
+#                try:
+#                    with open(pkl_name, 'wb') as f:
+#                        pickle.dump(model.dPs, f)
+#                except Exception as e:
+#                    logging.error('Model failed save to pickle')
+#                    logging.error(e)
 
                 best_power = power
                 count = 0

@@ -7,6 +7,8 @@ import autograd.numpy as np
 from autograd import grad
 from autograd import elementwise_grad as egrad
 
+#from scipy import sparse
+
 # from utils import memoize
 
 
@@ -75,8 +77,9 @@ class element:
             return None
         return target[0]
     def __set_target(self, e):
-        if self.target is not None:
-            self.__G[self.target.idx, self.idx] = False
+        target = self.target
+        if target is not None:
+            self.__G[target.idx, self.idx] = False
         if e is not None:
             self.__G[e.idx, self.idx] = True
             if self.sink:
@@ -133,10 +136,12 @@ class solar_grid:
         # Adjacency map defines the grid on which the simulation will run. This
         # defines each node's neighborhood and is STATIC.
         self.A = np.zeros((res**2, res**2)).astype(bool)
+#        self.A = sparse.dok_matrix((res**2, res**2))
         
         # Graph map defines the particular graph that is being solved right
         # now. This defines each node's donors and target and is DYNAMIC.
         self.G = np.zeros((res**2, res**2)).astype(bool)
+#        self.G = sparse.dok_matrix((res**2, res**2))
 
         # Map out the node indices based on location in a square 2D grid:
         self.idx_map = np.arange(res**2).reshape(res, res)
@@ -153,8 +158,8 @@ class solar_grid:
         for e in self.elements:
             self.init_neighbors(e)
 
-        # sink_idx = self.idx_map[int(res/2), 0]
-        sink_idx = self.idx_map[0, 0]
+        sink_idx = self.idx_map[int(res/2), 0]
+        # sink_idx = self.idx_map[0, 0]
         self.sink = self.elements[sink_idx]
         self.sink.sink = True
 
