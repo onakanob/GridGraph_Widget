@@ -7,7 +7,7 @@ import argparse
 import autograd.numpy as np
 
 from utils import param_loader, set_logger, plot_elements, make_gif
-from solargrid import solar_grid
+from greedygrid import GreedyGrid
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -36,7 +36,8 @@ if __name__ == '__main__':
 
     for res in resolutions:
         t = time.time()
-        model = solar_grid(res, params)
+        params['elements_per_side'] = res
+        model = GreedyGrid(params)
 
         save_dir = os.path.join(args.log_dir, 'model_' + str(res))
         if not os.path.exists(save_dir):

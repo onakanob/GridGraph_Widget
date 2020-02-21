@@ -1,19 +1,14 @@
-'''reworked solar grid elecrode simulation.'''
+"""Basic element and grid objects for implementing solar cell
+generator/diffuser elements in an arbitrary grid pattern"""
 
 import logging
 from collections import deque
 
 import autograd.numpy as np
 from autograd import grad
-from autograd import elementwise_grad as egrad
-
-#from scipy import sparse
-
-# from utils import memoize
 
 
-class element:
-    '''One solar cell element.'''
+class Element():
     def __init__(self, idx, coords, A, G, elements, Is, debts, dPs, params):
         self.idx = idx             # My global index
         self.coords = coords       # My simulation coordinates
@@ -27,6 +22,26 @@ class element:
 
         self.sink = False
 
+        def overhead_power(params):
+            '''Power lost locally when diffusing in each element.'''
+            return (params['Jsol']**2 * params['Rsheet'] * params['a']**4) / 12
+
+        def power_loss_function(params):
+            '''Generate a function that calculates local power loss as a
+            function of wire width.'''
+            def wire_area(w):
+                h = np.multiply(w, params['h_scale']) + params['h0']
+                return h * w
+            def power(w, I):
+                shadow_loss = np.multiply(params['Voc'] * params['Jsol'] * \
+                                          params['a'], w)
+                wire_loss = np.square(I) * params['Pwire'] * params['a'] /\
+                            (wire_area(w) + 1e-12)
+                sheet_loss = np.square(I) * params['Rsheet']
+                # Choose the best option between having a wire or not:
+                return np.minimum(sheet_loss, shadow_loss + wire_loss)
+            return power
+
         current_discount = overhead_power(params) / params['Voc']
         self.current_generated = self.params['Jsol'] *\
             np.square(self.params['a']) - current_discount
@@ -38,9 +53,8 @@ class element:
                              'the resolution of the simulation.')
 
         power = power_loss_function(self.params)
-        self.power_loss = lambda I: power(best_w(I, self.params), I)
+        self.power_loss = lambda I: power(self.best_w(I, self.params), I)
         self.grad_func = grad(self.power_loss)
-
 
     # PROPERTIES #
     def __get_I(self):
@@ -87,10 +101,13 @@ class element:
                               ' That can\'t be right.')
     target = property(__get_target, __set_target)
 
-
     def get_w(self):
-        return best_w(self.I, self.params)
+        return self.best_w(self.I, self.params)
 
+    def best_w(self, I, params):
+        # Choose the optimal w given I: this is a numerical solution
+        return ((2 * (I ** 2) * params['Pwire']) /\
+            (params['Voc'] * params['Jsol'] * params['h_scale'])) ** (1/3.)
 
     def update_I(self):
         inputs = [e.I for e in self.donors]  # can be vectorized
@@ -99,29 +116,23 @@ class element:
         self.I = np.sum(inputs) + self.current_generated
         self.debt = np.sum(debts) + self.power_loss(self.I)
 
-
     def update_dP(self):
-        if self.target is None:
+        if self.sink is True:
             dP = self.params['Voc']
-        else:
+        elif self.target is not None:
             dP = self.target.dP
+        else:
+            dP = 0
         self.dP = dP - self.grad_func(float(self.I) + 1e-20)
 
-
     def update_target(self):
-        if not self.sink:
-            neighbors = self.neighbors
-            np.random.shuffle(neighbors)
-            local_dPs = [e.dP for e in neighbors]
-            if any(np.greater(local_dPs, 0)):
-                self.target = neighbors[np.argmax(local_dPs)]
-            else:
-                self.target = None
+        raise Exception('update_target has not been implemented!')
 
 
-class solar_grid:
+class DiffusionGrid():
     '''Current-gathering grid model'''
-    def __init__(self, res, params):
+    def __init__(self, element_class, params):
+        res = params['elements_per_side']
         params['a'] = params['L'] / res
         self.params = params
 
@@ -136,25 +147,23 @@ class solar_grid:
         # Adjacency map defines the grid on which the simulation will run. This
         # defines each node's neighborhood and is STATIC.
         self.A = np.zeros((res**2, res**2)).astype(bool)
-#        self.A = sparse.dok_matrix((res**2, res**2))
         
         # Graph map defines the particular graph that is being solved right
         # now. This defines each node's donors and target and is DYNAMIC.
         self.G = np.zeros((res**2, res**2)).astype(bool)
-#        self.G = sparse.dok_matrix((res**2, res**2))
 
         # Map out the node indices based on location in a square 2D grid:
         self.idx_map = np.arange(res**2).reshape(res, res)
         for i in range(res**2):
-            self.elements[i] = element(idx=i,
-                                       coords=np.where(self.idx_map == i),
-                                       A=self.A,
-                                       G=self.G,
-                                       elements=self.elements,
-                                       Is=self.Is,
-                                       debts=self.debts,
-                                       dPs=self.dPs,
-                                       params=self.params)
+            self.elements[i] = element_class(idx=i,
+                                        coords=np.where(self.idx_map == i),
+                                        A=self.A,
+                                        G=self.G,
+                                        elements=self.elements,
+                                        Is=self.Is,
+                                        debts=self.debts,
+                                        dPs=self.dPs,
+                                        params=self.params)
         for e in self.elements:
             self.init_neighbors(e)
 
@@ -163,6 +172,20 @@ class solar_grid:
         self.sink = self.elements[sink_idx]
         self.sink.sink = True
 
+    def init_neighbors(self, element):
+        """add neighbors when points are edge-sharing neighbors in the
+        square grid."""
+        idx = np.where(self.idx_map == element.idx)
+        neighbors = []
+        if idx[0] > 0:
+            neighbors.append(self.idx_map[idx[0] - 1, idx[1]][0])
+        if idx[0] < (self.shape[0] - 1):
+            neighbors.append(self.idx_map[idx[0] + 1, idx[1]][0])
+        if idx[1] > 0:
+            neighbors.append(self.idx_map[idx[0], idx[1] - 1][0])
+        if idx[1] < (self.shape[1] - 1):
+            neighbors.append(self.idx_map[idx[0], idx[1] + 1][0])
+        element.neighbors = neighbors
 
     def power(self):
         Q = self.walk_graph()
@@ -175,8 +198,12 @@ class solar_grid:
         y = self.sink.I * self.params['Voc'] - self.sink.debt
         return y
 
-
     def walk_graph(self):
+        def safepop(S):
+            if len(S) > 0:
+                return S.pop()
+            return None
+
         Q = deque()
         S = deque()
         point = self.sink.idx
@@ -187,7 +214,6 @@ class solar_grid:
             point = safepop(S)
         return Q
 
-
     def __len__(self):
         return np.product(self.shape)
 
@@ -197,75 +223,11 @@ class solar_grid:
     def element_grid(self):
         return np.reshape(self.elements, self.shape)
 
-
-    def init_neighbors(self, element):
-        idx = np.where(self.idx_map == element.idx)
-        neighbors = []
-        if idx[0] > 0:
-            neighbors.append(self.idx_map[idx[0] - 1, idx[1]][0])
-        if idx[0] < (self.shape[0] - 1):
-            neighbors.append(self.idx_map[idx[0] + 1, idx[1]][0])
-        if idx[1] > 0:
-            neighbors.append(self.idx_map[idx[0], idx[1] - 1][0])
-        if idx[1] < (self.shape[1] - 1):
-            neighbors.append(self.idx_map[idx[0], idx[1] + 1][0])
-        # 8-fold connections...
-        # if (idx[0] > 0) & (idx[1] > 0):
-        #     neighbors.append(self.idx_map[idx[0] - 1, idx[1] - 1][0])
-        # if (idx[0] > 0) & (idx[1] < (self.shape[1] - 1)):
-        #     neighbors.append(self.idx_map[idx[0] - 1, idx[1] + 1][0])
-        # if (idx[0] < (self.shape[0] - 1)) & (idx[1] > 0):
-        #     neighbors.append(self.idx_map[idx[0] + 1, idx[1] - 1][0])
-        # if (idx[0] < (self.shape[0] - 1)) & (idx[1] < (self.shape[1] - 1)):
-        #     neighbors.append(self.idx_map[idx[0] + 1, idx[1] + 1][0])
-        element.neighbors = neighbors
-
-
-def power_loss_function(params):
-    def wire_area(w):
-        h = np.multiply(w, params['h_scale']) + params['h0']
-        return h * w
-
-    def power(w, I):
-        shadow_loss = np.multiply(params['Voc'] * params['Jsol'] * \
-                                  params['a'], w)
-
-        wire_loss = np.square(I) * params['Pwire'] * params['a'] /\
-                    (wire_area(w) + 1e-12)
-
-        sheet_loss = np.square(I) * params['Rsheet']
-
-        return np.minimum(sheet_loss, shadow_loss + wire_loss)
-
-    return power
-
-
-def best_w(I, params):
-    return ((2 * (I ** 2) * params['Pwire']) /\
-            (params['Voc'] * params['Jsol'] * params['h_scale'])) ** (1/3.)
-
-
-def overhead_power(params):
-    '''don't use this. power lost in sheet getting to grid, but use discounted
-    current instead.'''
-    return (params['Jsol']**2 * params['Rsheet'] * params['a']**4) / 12
-
-
-def safepop(S):
-    if len(S) > 0:
-        return S.pop()
-    return None
-
-
 if __name__ == '__main__':
+    logging.info('Debugging element and diffusion_grid objects.')
     from utils import param_loader
 
     params = param_loader('./recipes/10 cm test.csv')
-    params['a'] = params['L'] / 100
-
-    I = 1
-    power = power_loss_function(params)
-    power_w = lambda I: power(best_w(I, params), I)
-    dPdI = egrad(power_w)
+    params['elements_per_side'] = 100
     
-    grid = solar_grid(2, params)
+    grid = DiffusionGrid(element_class=Element, params=params)
