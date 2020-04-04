@@ -56,8 +56,6 @@ class BanditGrid(DiffusionGrid):
         '''override - ignore dP, add reward calculation and dissemination
         before returning y.'''
         self.Q = self.walk_graph()
-        # for i in Q:
-        #     self.elements[i].update_dP()
         for i in reversed(self.Q):
             self.elements[i].update_I()
         y = self.sink.I * self.params['Voc'] - self.sink.debt

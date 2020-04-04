@@ -15,7 +15,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--recipe_file', type=str,
-                        default='./recipes/2 cm test.csv',
+                        default='./recipes/1 cm test.csv',
                         help='CSV containing run parameters.')
     parser.add_argument('--log_dir', type=str,
                         default='./TEMP/',

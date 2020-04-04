@@ -1,13 +1,12 @@
 python .\run_greedygrid.py ^
-       --log_dir "TEST" ^
+       --log_dir "greedy_temp" ^
        --recipe_file "./recipes/1 cm test.csv" ^
-       --resolutions "27"
+       --resolutions "5"
 
-python .\run_greedygrid.py ^
-       --log_dir "TEST" ^
-       --recipe_file "./recipes/2 cm test.csv" ^
-       --resolutions "46" ^
-       --save_video
+python .\run_banditgrid.py ^
+       --log_dir "bandit_temp" ^
+       --recipe_file "./recipes/1 cm test.csv" ^
+       --resolutions "5"
 
 rem python .\run_solargrid.py ^
 rem        --log_dir "redo_1_2_5_10" ^

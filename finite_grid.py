@@ -67,14 +67,15 @@ class Element():
             return None
         return target[0]
     def __set_target(self, e):
-        target = self.target
-        if target is not None:
-            self.__G[target.idx, self.idx] = False
+#        target = self.target
+        if self.target is not None:
+            self.__G[self.target.idx, self.idx] = False
         if e is not None:
-            self.__G[e.idx, self.idx] = True
-            if self.sink:
-                logging.error('Whoops, a sink was assigned a target.' +
-                              ' That can\'t be right.')
+            if not self.sink:
+                self.__G[e.idx, self.idx] = True
+#            else:
+#                logging.error('Whoops, a sink was assigned a target.' +
+#                              ' That can\'t be right.')
     target = property(__get_target, __set_target)
 
     def get_w(self):
@@ -85,20 +86,7 @@ class Element():
         debts = [e.debt for e in self.donors]  # can also be vectorized
 
         self.I = np.sum(inputs) + self.current_generated
-#        self.debt = np.sum(debts) + self.power_loss(self.I)  ##
         self.debt = np.sum(debts) + self.solver.loss(self.I)
-
-    def update_dP(self):
-        if self.sink is True:
-            dP = self.params['Voc']
-        elif self.target is not None:
-            dP = self.target.dP
-        else:
-            dP = 0
-        self.dP = dP - self.grad_func(float(self.I) + 1e-20)
-
-    def update_target(self):
-        raise Exception('update_target has not been implemented!')
 
 
 class DiffusionGrid():
@@ -161,10 +149,6 @@ class DiffusionGrid():
 
     def power(self):
         Q = self.walk_graph()
-        for i in Q:
-            self.elements[i].update_dP()
-        for e in self.elements:
-            e.update_target()
         for i in reversed(Q):
             self.elements[i].update_I()
         y = self.sink.I * self.params['Voc'] - self.sink.debt
