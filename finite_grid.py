@@ -9,7 +9,8 @@ from autograd import grad
 
 
 class Element():
-    def __init__(self, idx, coords, A, G, elements, Is, debts, dPs, params):
+    def __init__(self, idx, coords, A, G, elements, Is, debts, dPs, 
+                 solver_type, params):
         self.idx = idx             # My global index
         self.coords = coords       # My simulation coordinates
         self.__elements = elements  # View of the global element array
@@ -19,42 +20,17 @@ class Element():
         self.__A = A                # View of the adjacency matrix
         self.__G = G                # View of the subgraph matrix
         self.params = params        # View of global simulation params
+        
+        self.solver = solver_type(params)
 
         self.sink = False
 
-        def overhead_power(params):
-            '''Power lost locally when diffusing in each element.'''
-            return (params['Jsol']**2 * params['Rsheet'] * params['a']**4) / 12
-
-        def power_loss_function(params):
-            '''Generate a function that calculates local power loss as a
-            function of wire width.'''
-            def wire_area(w):
-                h = np.multiply(w, params['h_scale']) + params['h0']
-                return h * w
-            def power(w, I):
-                shadow_loss = np.multiply(params['Voc'] * params['Jsol'] * \
-                                          params['a'], w)
-                wire_loss = np.square(I) * params['Pwire'] * params['a'] /\
-                            (wire_area(w) + 1e-12)
-                sheet_loss = np.square(I) * params['Rsheet']
-                # Choose the best option between having a wire or not:
-                return np.minimum(sheet_loss, shadow_loss + wire_loss)
-            return power
-
-        current_discount = overhead_power(params) / params['Voc']
-        self.current_generated = self.params['Jsol'] *\
-            np.square(self.params['a']) - current_discount
-
-        if current_discount >\
-           self.params['Jsol'] * np.square(self.params['a']):
+        self.current_generated = self.solver.I_generated()
+        if self.current_generated < 0:
             raise ValueError('Power loss in sheet overwhelming power '+
                              'collected. reduce the size or increase '+
                              'the resolution of the simulation.')
-
-        power = power_loss_function(self.params)
-        self.power_loss = lambda I: power(self.best_w(I, self.params), I)
-        self.grad_func = grad(self.power_loss)
+        self.grad_func = grad(self.solver.loss)
 
     # PROPERTIES #
     def __get_I(self):
@@ -102,19 +78,15 @@ class Element():
     target = property(__get_target, __set_target)
 
     def get_w(self):
-        return self.best_w(self.I, self.params)
-
-    def best_w(self, I, params):
-        # Choose the optimal w given I: this is a numerical solution
-        return ((2 * (I ** 2) * params['Pwire']) /\
-            (params['Voc'] * params['Jsol'] * params['h_scale'])) ** (1/3.)
+        return self.solver.w(self.I)
 
     def update_I(self):
         inputs = [e.I for e in self.donors]  # can be vectorized
         debts = [e.debt for e in self.donors]  # can also be vectorized
 
         self.I = np.sum(inputs) + self.current_generated
-        self.debt = np.sum(debts) + self.power_loss(self.I)
+#        self.debt = np.sum(debts) + self.power_loss(self.I)  ##
+        self.debt = np.sum(debts) + self.solver.loss(self.I)
 
     def update_dP(self):
         if self.sink is True:
@@ -131,7 +103,7 @@ class Element():
 
 class DiffusionGrid():
     '''Current-gathering grid model'''
-    def __init__(self, element_class, params):
+    def __init__(self, element_class, solver_type, params):
         res = params['elements_per_side']
         params['a'] = params['L'] / res
         self.params = params
@@ -163,12 +135,12 @@ class DiffusionGrid():
                                         Is=self.Is,
                                         debts=self.debts,
                                         dPs=self.dPs,
+                                        solver_type=solver_type,
                                         params=self.params)
         for e in self.elements:
             self.init_neighbors(e)
 
         sink_idx = self.idx_map[int(res/2), 0]
-        # sink_idx = self.idx_map[0, 0]
         self.sink = self.elements[sink_idx]
         self.sink.sink = True
 
@@ -226,8 +198,11 @@ class DiffusionGrid():
 if __name__ == '__main__':
     logging.info('Debugging element and diffusion_grid objects.')
     from utils import param_loader
+    from power_handlers import lossy_handler
 
     params = param_loader('./recipes/10 cm test.csv')
     params['elements_per_side'] = 100
     
-    grid = DiffusionGrid(element_class=Element, params=params)
+    grid = DiffusionGrid(element_class=Element, solver_type=lossy_handler, 
+                         params=params)
+    print('done')

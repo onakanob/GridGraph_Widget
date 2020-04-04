@@ -1,9 +1,9 @@
-python .\run_solargrid.py ^
+python .\run_greedygrid.py ^
        --log_dir "TEST" ^
        --recipe_file "./recipes/1 cm test.csv" ^
        --resolutions "27"
 
-python .\run_solargrid.py ^
+python .\run_greedygrid.py ^
        --log_dir "TEST" ^
        --recipe_file "./recipes/2 cm test.csv" ^
        --resolutions "46" ^

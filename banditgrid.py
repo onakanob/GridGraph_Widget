@@ -32,12 +32,15 @@ class BanditElement(Element):
 
 
 class BanditGrid(DiffusionGrid):
-    def __init__(self, params):
-        super().__init__(element_class=BanditElement, params=params)
+    def __init__(self, solver_type, params):
+        super().__init__(element_class=BanditElement, 
+                         solver_type=solver_type,
+                         params=params)
         self.dPs = None  # Just for safety - this should not be used currently
         self.mean_power = 0  # Unbiased initialization
         self.reward_decay = params['reward_decay']
         self.learning_rate = params['learning_rate']
+        self.Q = None
 
     def init_neighbors(self, element):
         super().init_neighbors(element)
@@ -52,10 +55,10 @@ class BanditGrid(DiffusionGrid):
     def power(self):
         '''override - ignore dP, add reward calculation and dissemination
         before returning y.'''
-        Q = self.walk_graph()
+        self.Q = self.walk_graph()
         # for i in Q:
         #     self.elements[i].update_dP()
-        for i in reversed(Q):
+        for i in reversed(self.Q):
             self.elements[i].update_I()
         y = self.sink.I * self.params['Voc'] - self.sink.debt
         return y
@@ -64,21 +67,25 @@ class BanditGrid(DiffusionGrid):
         '''iterate all element weights based on return value y.'''
         reward = y - self.mean_power
         self.mean_power += self.reward_decay * reward
-        for ele in self.elements:
-            ele.update_H(reward, self.learning_rate)
+        for i in self.Q:
+            self.elements[i].update_H(reward, self.learning_rate)
 
 
 if __name__ == '__main__':
     from utils import param_loader
+    from power_handlers import lossy_handler
 
     params = param_loader('./recipes/1 cm test.csv')
     params['elements_per_side'] = 20
     params['reward_decay'] = 0.3
-    params['learning_rate'] = 1e-2
+    params['learning_rate'] = 1
     
-    grid = BanditGrid(params)
+    model = BanditGrid(solver_type=lossy_handler, params=params)
     
-    my_ele = grid.elements[0]
+    my_ele = model.elements[0]
     
-    power = grid.power()
-    power = grid.power()
+    for i in range(50):
+        model.generate_grid()
+        power = model.power()
+        model.update_weights(power)
+        print(power)

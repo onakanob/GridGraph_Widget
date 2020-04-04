@@ -19,15 +19,21 @@ class GreedyElement(Element):
 
 
 class GreedyGrid(DiffusionGrid):
-    def __init__(self, params):
-        super().__init__(element_class=GreedyElement, params=params)
+    def __init__(self, solver_type, params):
+        super().__init__(element_class=GreedyElement, 
+                         solver_type=solver_type,
+                         params=params)
 
 
 if __name__ == '__main__':
     logging.info('Debugging greedy diffusion grid.')
     from utils import param_loader
+    from power_handlers import lossy_handler
 
     params = param_loader('./recipes/10 cm test.csv')
     params['elements_per_side'] = 100
     
-    grid = GreedyGrid(params=params)
+    grid = GreedyGrid(solver_type=lossy_handler, params=params)
+    
+    for i in range(3):
+        print(grid.power())

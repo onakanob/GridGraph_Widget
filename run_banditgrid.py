@@ -1,7 +1,7 @@
 """Experimental run of bandit-element solar grid optimizer."""
 import os
 import time
-import pickle
+# import pickle
 import logging
 import argparse
 
@@ -9,12 +9,13 @@ import autograd.numpy as np
 
 from utils import param_loader, set_logger, plot_elements, make_gif
 from banditgrid import BanditGrid
+from power_handlers import lossy_handler
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--recipe_file', type=str,
-                        default='./recipes/1 cm test.csv',
+                        default='./recipes/2 cm test.csv',
                         help='CSV containing run parameters.')
     parser.add_argument('--log_dir', type=str,
                         default='./TEMP/',
@@ -30,8 +31,8 @@ if __name__ == '__main__':
     resolutions = [int(item) for item in args.resolutions.split(',')]
 
     # Hard code ML parameters for now:
-    params['reward_decay'] = 1e-2
-    params['learning_rate'] = 10
+    params['reward_decay'] = 5e-2
+    params['learning_rate'] = 1
 
     if not os.path.exists(args.log_dir):
         os.makedirs(args.log_dir)
@@ -41,14 +42,14 @@ if __name__ == '__main__':
     for res in resolutions:
         t = time.time()
         params['elements_per_side'] = res
-        model = BanditGrid(params)
+        model = BanditGrid(solver_type=lossy_handler, params=params)
 
         save_dir = os.path.join(args.log_dir, 'model_' + str(res))
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         old_power = None
-        max_iters = 1000000
+        max_iters = 10000
         iters = 0
         best_power = 0
         pkl_name = os.path.join(save_dir, 'model' + str(res) + '.pickle')

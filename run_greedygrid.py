@@ -8,12 +8,13 @@ import autograd.numpy as np
 
 from utils import param_loader, set_logger, plot_elements, make_gif
 from greedygrid import GreedyGrid
+from power_handlers import lossy_handler
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--recipe_file', type=str,
-                        default='./recipes/5 cm test.csv',
+                        default='./recipes/2 cm test.csv',
                         help='CSV containing run parameters.')
     parser.add_argument('--log_dir', type=str,
                         default='./TEMP/',
@@ -37,7 +38,7 @@ if __name__ == '__main__':
     for res in resolutions:
         t = time.time()
         params['elements_per_side'] = res
-        model = GreedyGrid(params)
+        model = GreedyGrid(solver_type=lossy_handler, params=params)
 
         save_dir = os.path.join(args.log_dir, 'model_' + str(res))
         if not os.path.exists(save_dir):
