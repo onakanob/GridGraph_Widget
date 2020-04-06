@@ -1,0 +1,9 @@
+﻿param,value
+Voc,0.8
+Jsol,0.02
+Pwire,1.00E-03
+Rsheet,1000
+w_min,1.00E-04
+h0,0
+h_scale,1
+L,5
