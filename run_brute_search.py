@@ -21,9 +21,6 @@ from power_handlers import lossy_handler
 from utils import param_loader, set_logger, plot_elements
 
 
-MAX_RES = 4
-
-
 def graph_by_idx(idx, model, degrees=None):
     """Modify model so that it is set to the grid corresponding to index idx,
     according to a graph indexing scheme."""
@@ -45,6 +42,9 @@ if __name__ == '__main__':
     parser.add_argument('--log_dir', type=str,
                         default='./TEMP/',
                         help='Output directory.')
+    parser.add_argument('--max_res', type=int,
+                        default=3,
+                        help='Largest elements-per-side to attempt.')
 
     args = parser.parse_args()
     params = param_loader(args.recipe_file)
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     logging.info('Logging brute force search to %s', args.log_dir)
 
     # all_results = {}
-    for res in range(1, MAX_RES+1):
+    for res in range(1, args.max_res + 1):
         try:
             t = time.time()
             params['elements_per_side'] = res
@@ -77,9 +77,11 @@ if __name__ == '__main__':
 
             # all_results[res] = results
             logging.info(f'completed res {res} after {(time.time()-t)/60} minutes')
+            logging.info(f'Run took {(time.time()-t) / len(results)} seconds/iter')
 
             # Parse the optimal solutions
-#            Y = np.load('4x4 brute force power returns.npy')
+            # Y = np.load('4x4 brute force power returns.npy')
+            np.save(str(res) + '_square_results.npy', results)
             plt.hist(results)
             plt.savefig(os.path.join(args.log_dir, str(res) + '_per_side_hist.png'))
             best_graphs = np.argwhere(results == np.amax(results))
