@@ -7,8 +7,10 @@ from collections import deque
 import autograd.numpy as np
 from autograd import grad
 
+from .finite_grid import Element, DiffusionGrid
 
-class Element():
+
+class Voltage_Element(Element):
     def __init__(self, idx, coords, A, G, elements, Is, Vs,
                  solver_type, params):
         self.idx = idx             # My global index
@@ -25,69 +27,58 @@ class Element():
         self.sink = False
 
     # PROPERTIES #
-    def __get_I(self):
-        return self.__Is[self.idx]
+    # def __get_I(self):
+    #     return self.__Is[self.idx]
 
-    def __set_I(self, val):
-        self.__Is[self.idx] = val
+    # def __set_I(self, val):
+    #     self.__Is[self.idx] = val
 
-    I = property(__get_I, __set_I)
+    def __get_V(self):
+        return self.__Vs[self.idx]
 
-    def __get_debt(self):
-        return self.__debts[self.idx]
+    def __set_V(self, val):
+        self.__Vs[self.idx] = val
 
-    def __set_debt(self, val):
-        self.__debts[self.idx] = val
+    # def __get_neighbors(self):
+    #     return self.__elements[self.__A[self.idx, :]]
 
-    debt = property(__get_debt, __set_debt)
+    # def __set_neighbors(self, indices):
+    #     self.__A[self.idx, indices] = True
 
-    def __get_dP(self):
-        return self.__dPs[self.idx]
+    # def __get_target(self):
+    #     target = self.__elements[self.__G[:, self.idx]]
+    #     if not target.size > 0:
+    #         return None
+    #     return target[0]
 
-    def __set_dP(self, val):
-        self.__dPs[self.idx] = val
+    # def __set_target(self, e):
+    #     if self.target is not None:
+    #         self.__G[self.target.idx, self.idx] = False
+    #     if e is not None:
+    #         if not self.sink:
+    #             self.__G[e.idx, self.idx] = True
 
-    dP = property(__get_dP, __set_dP)
+    # def __get_donors(self):
+    #     return self.__elements[self.__G[self.idx, :]]
 
-    def __get_neighbors(self):
-        return self.__elements[self.__A[self.idx, :]]
+    # I = property(__get_I, __set_I)
+    V = property(__get_V, __set_V)
+    # neighbors = property(__get_neighbors, __set_neighbors)
+    # target = property(__get_target, __set_target)
+    # donors = property(__get_donors)
 
-    def __set_neighbors(self, indices):
-        self.__A[self.idx, indices] = True
+    # def get_w(self):
+    #     return self.solver.w(self.I)
 
-    neighbors = property(__get_neighbors, __set_neighbors)
+    # def update_I(self):
+    #     inputs = [e.I for e in self.donors]  # can be vectorized
+    #     debts = [e.debt for e in self.donors]  # can also be vectorized
 
-    def __get_donors(self):
-        return self.__elements[self.__G[self.idx, :]]
-    donors = property(__get_donors)
-
-    def __get_target(self):
-        target = self.__elements[self.__G[:, self.idx]]
-        if not target.size > 0:
-            return None
-        return target[0]
-
-    def __set_target(self, e):
-        if self.target is not None:
-            self.__G[self.target.idx, self.idx] = False
-        if e is not None:
-            if not self.sink:
-                self.__G[e.idx, self.idx] = True
-
-    target = property(__get_target, __set_target)
-
-    def get_w(self):
-        return self.solver.w(self.I)
-
-    def update_I(self):
-        inputs = [e.I for e in self.donors]  # can be vectorized
-        debts = [e.debt for e in self.donors]  # can also be vectorized
-
-        self.I = np.sum(inputs) + self.current_generated
-        self.debt = np.sum(debts) + self.solver.loss(self.I)
+    #     self.I = np.sum(inputs) + self.current_generated
+    #     self.debt = np.sum(debts) + self.solver.loss(self.I)
 
 
-class DiffusionGrid():
+class VoltageGrid(DiffusionGrid):
     '''Current-gathering grid model'''
     def __init__(self, element_class, solver_type, params):
         res = params['elements_per_side']
@@ -99,8 +90,7 @@ class DiffusionGrid():
         # Containers for current set of current, debt, and power gradients.
         self.elements = np.empty(res**2, dtype=object)
         self.Is = np.zeros(res**2)
-        self.debts = np.zeros(res**2)
-        self.dPs = np.zeros(res**2)
+        self.Vs = np.zeros(res**2)
 
         # Adjacency map defines the grid on which the simulation will run. This
         # defines each node's neighborhood and is STATIC.
@@ -119,8 +109,7 @@ class DiffusionGrid():
                                         G=self.G,
                                         elements=self.elements,
                                         Is=self.Is,
-                                        debts=self.debts,
-                                        dPs=self.dPs,
+                                        Vs=self.Vs,
                                         solver_type=solver_type,
                                         params=self.params)
         for e in self.elements:
@@ -130,20 +119,20 @@ class DiffusionGrid():
         self.sink = self.elements[sink_idx]
         self.sink.sink = True
 
-    def init_neighbors(self, element):
-        """add neighbors when points are edge-sharing neighbors in the
-        square grid."""
-        idx = np.where(self.idx_map == element.idx)
-        neighbors = []
-        if idx[0] > 0:
-            neighbors.append(self.idx_map[idx[0] - 1, idx[1]][0])
-        if idx[0] < (self.shape[0] - 1):
-            neighbors.append(self.idx_map[idx[0] + 1, idx[1]][0])
-        if idx[1] > 0:
-            neighbors.append(self.idx_map[idx[0], idx[1] - 1][0])
-        if idx[1] < (self.shape[1] - 1):
-            neighbors.append(self.idx_map[idx[0], idx[1] + 1][0])
-        element.neighbors = neighbors
+    # def init_neighbors(self, element):
+    #     """add neighbors when points are edge-sharing neighbors in the
+    #     square grid."""
+    #     idx = np.where(self.idx_map == element.idx)
+    #     neighbors = []
+    #     if idx[0] > 0:
+    #         neighbors.append(self.idx_map[idx[0] - 1, idx[1]][0])
+    #     if idx[0] < (self.shape[0] - 1):
+    #         neighbors.append(self.idx_map[idx[0] + 1, idx[1]][0])
+    #     if idx[1] > 0:
+    #         neighbors.append(self.idx_map[idx[0], idx[1] - 1][0])
+    #     if idx[1] < (self.shape[1] - 1):
+    #         neighbors.append(self.idx_map[idx[0], idx[1] + 1][0])
+    #     element.neighbors = neighbors
 
     def power(self):
         Q = self.walk_graph()
@@ -179,13 +168,13 @@ class DiffusionGrid():
 
 
 if __name__ == '__main__':
-    logging.info('Debugging element and diffusion_grid objects.')
+    logging.info('Debugging voltage element and voltage_grid objects.')
     from utils import param_loader
-    from power_handlers import lossy_handler
+    from .voltage_handlers import dual_diode_handler as handler
 
-    params = param_loader('./recipes/10 cm test.csv')
-    params['elements_per_side'] = 100
+    params = param_loader('./recipes/1 cm test.csv')
+    params['elements_per_side'] = 4
 
-    grid = DiffusionGrid(element_class=Element, solver_type=lossy_handler,
-                         params=params)
+    grid = VoltageGrid(element_class=Voltage_Element, solver_type=handler,
+                       params=params)
     print('done')

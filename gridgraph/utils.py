@@ -130,6 +130,20 @@ class memoize(object):
         return partial(self.__call__, obj)
 
 
+def graph_by_idx(idx, model, degrees=None):
+    """Modify model so that it is set to the grid corresponding to index idx,
+    according to a graph indexing scheme."""
+    if degrees is None:
+        degrees = np.array([len(n.neighbors) if not n.sink else 1 for n in
+                            model.elements]).astype('double')
+
+    nbs = [int((idx // np.prod(degrees[0:e])) % degrees[e]) for e in
+           range(len(degrees))]
+
+    for i, nb in enumerate(nbs):
+        model.elements[i].target = model.elements[i].neighbors[nb]
+
+
 if __name__ == '__main__':
     """Unit tests for local methods"""
     points = [(0, 0, 1),

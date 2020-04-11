@@ -6,6 +6,8 @@ Experiment to explore every possible solar subgrid on a square-defined FEA grid
 and record the class of highest-performing results.
 
 @author: Oliver
+
+TODO EVERYTHING - Don't run this!
 """
 
 import os
@@ -20,21 +22,7 @@ from matplotlib import pyplot as plt
 sys.path.append('..')
 from gridgraph.finite_grid import DiffusionGrid, Element
 from gridgraph.voltage_handlers import dual_diode_handler
-from gridgraph.utils import param_loader, set_logger, plot_elements
-
-
-def graph_by_idx(idx, model, degrees=None):
-    """Modify model so that it is set to the grid corresponding to index idx,
-    according to a graph indexing scheme."""
-    if degrees is None:
-        degrees = np.array([len(n.neighbors) if not n.sink else 1 for n in
-                            model.elements]).astype('double')
-
-    nbs = [int((idx // np.prod(degrees[0:e])) % degrees[e]) for e in
-           range(len(degrees))]
-
-    for i, nb in enumerate(nbs):
-        model.elements[i].target = model.elements[i].neighbors[nb]
+from gridgraph.utils import param_loader, set_logger, plot_elements, graph_by_idx
 
 
 if __name__ == '__main__':
