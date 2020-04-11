@@ -44,8 +44,8 @@ def plot_elements(elements, filename=None, w_scale=2, i_scale=1):
                 # J = e.my_I()/(w)  # For constant width
                 # J = e.I/(w**2)  # For constant area
                 fade = i_scale * e.I / max_I
-                color = (0.3 + 0.7*fade, 0.5 + fade*0.3, 0.7)
-                ax.plot(x, y, linewidth=(w/max_w)*w_scale, color=color)
+                color = (0.3 + 0.7 * fade, 0.5 + fade * 0.3, 0.7)
+                ax.plot(x, y, linewidth=(w / max_w) * w_scale, color=color)
     if filename:
         plt.savefig(filename)
         plt.close()
@@ -53,16 +53,19 @@ def plot_elements(elements, filename=None, w_scale=2, i_scale=1):
         plt.show()
         plt.close()
 
+
 def make_gif(path, fps=8):
-    filelist=os.listdir(path)
-    for f in filelist[:]: # filelist[:] makes a copy of filelist.
+    filelist = os.listdir(path)
+    for f in filelist[:]:       # filelist[:] makes a copy of filelist.
         if not(f.endswith(".png")):
             filelist.remove(f)
 
     images = []
     for filename in filelist:
         images.append(imageio.imread(os.path.join(path, filename)))
-    imageio.mimsave(os.path.join(path, 'movie.gif'), images, format='GIF', fps=fps)
+    imageio.mimsave(os.path.join(path, 'movie.gif'), images, format='GIF',
+                    fps=fps)
+
 
 def write_to_sij_recipe(points, filename='recipe.txt'):
     def tuple_to_tabs(mytuple):
@@ -100,7 +103,8 @@ def set_logger(log_path):
     if not logger.handlers:
         # Logging to a file
         file_handler = logging.FileHandler(log_path)
-        file_handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s: %(message)s'))
+        file_handler.setFormatter(
+            logging.Formatter('%(asctime)s:%(levelname)s: %(message)s'))
         logger.addHandler(file_handler)
 
         # Logging to console
@@ -126,7 +130,21 @@ class memoize(object):
         return partial(self.__call__, obj)
 
 
-if __name__=='__main__':
+def graph_by_idx(idx, model, degrees=None):
+    """Modify model so that it is set to the grid corresponding to index idx,
+    according to a graph indexing scheme."""
+    if degrees is None:
+        degrees = np.array([len(n.neighbors) if not n.sink else 1 for n in
+                            model.elements]).astype('double')
+
+    nbs = [int((idx // np.prod(degrees[0:e])) % degrees[e]) for e in
+           range(len(degrees))]
+
+    for i, nb in enumerate(nbs):
+        model.elements[i].target = model.elements[i].neighbors[nb]
+
+
+if __name__ == '__main__':
     """Unit tests for local methods"""
     points = [(0, 0, 1),
               (0, 10, 1),
@@ -137,10 +155,3 @@ if __name__=='__main__':
 
     with open('best_model.pickle', 'rb') as f:
         model = pickle.load(f)
-
-    # For each cell in the model
-    # Walk up gradient until there is no more up, adding scaled tuples at each
-    # jump. If it's an odd index cell, flip the tuple list. Append to the full
-    # recipe. Write the recipe. The model uses 60 micron grid size, one micron
-    # wires. Recipe should be in 0.1 micron increments, so each cell is 600
-    # units to a side. The whole pattern is 3mm, or 50 * 600 = 30000 units max.
