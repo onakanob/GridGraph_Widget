@@ -15,11 +15,11 @@ class Voltage_Element(Element):
                  solver_type, params):
         self.idx = idx             # My global index
         self.coords = coords       # My simulation coordinates
-        self.__elements = elements  # View of the global element array
-        self.__Is = Is              # View of the global current array
-        self.__Vs = Vs              # View of the global debt array
-        self.__A = A                # View of the adjacency matrix
-        self.__G = G                # View of the subgraph matrix
+        self._elements = elements  # View of the global element array
+        self._Is = Is              # View of the global current array
+        self._Vs = Vs              # View of the global debt array
+        self._A = A                # View of the adjacency matrix
+        self._G = G                # View of the subgraph matrix
         self.params = params        # View of global simulation params
 
         self.solver = solver_type(params)
@@ -27,55 +27,20 @@ class Voltage_Element(Element):
         self.sink = False
 
     # PROPERTIES #
-    # def __get_I(self):
-    #     return self.__Is[self.idx]
+    def _get_V(self):
+        return self._Vs[self.idx]
 
-    # def __set_I(self, val):
-    #     self.__Is[self.idx] = val
+    def _set_V(self, val):
+        self._Vs[self.idx] = val
 
-    def __get_V(self):
-        return self.__Vs[self.idx]
+    V = property(fget=lambda self: self._get_V,
+                 fset=lambda self, val: self._set_V(val))
 
-    def __set_V(self, val):
-        self.__Vs[self.idx] = val
+    def update_I(self):
+        """The 2-diode model needs to assume constant V or I at any given"""
+        inputs = [e.I for e in self.donors]  # can be vectorized
 
-    # def __get_neighbors(self):
-    #     return self.__elements[self.__A[self.idx, :]]
-
-    # def __set_neighbors(self, indices):
-    #     self.__A[self.idx, indices] = True
-
-    # def __get_target(self):
-    #     target = self.__elements[self.__G[:, self.idx]]
-    #     if not target.size > 0:
-    #         return None
-    #     return target[0]
-
-    # def __set_target(self, e):
-    #     if self.target is not None:
-    #         self.__G[self.target.idx, self.idx] = False
-    #     if e is not None:
-    #         if not self.sink:
-    #             self.__G[e.idx, self.idx] = True
-
-    # def __get_donors(self):
-    #     return self.__elements[self.__G[self.idx, :]]
-
-    # I = property(__get_I, __set_I)
-    V = property(__get_V, __set_V)
-    # neighbors = property(__get_neighbors, __set_neighbors)
-    # target = property(__get_target, __set_target)
-    # donors = property(__get_donors)
-
-    # def get_w(self):
-    #     return self.solver.w(self.I)
-
-    # def update_I(self):
-    #     inputs = [e.I for e in self.donors]  # can be vectorized
-    #     debts = [e.debt for e in self.donors]  # can also be vectorized
-
-    #     self.I = np.sum(inputs) + self.current_generated
-    #     self.debt = np.sum(debts) + self.solver.loss(self.I)
+        self.I = np.sum(inputs) + self.current_generated
 
 
 class VoltageGrid(DiffusionGrid):
