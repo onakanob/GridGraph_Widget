@@ -5,9 +5,10 @@ Objects to solve solar cell equations
 @author: Oliver
 """
 import autograd.numpy as np
+# import cvxpy as cp
 
 
-class dual_diode_handler():
+class Dual_Diode_Handler():
     '''2-diode current, voltage, and wire calculations in a square element.'''
     def __init__(self, params):
         self.params = params
@@ -27,10 +28,13 @@ class dual_diode_handler():
         '''May not need to use sheet loss here: 2-diode appropriately tuned
         would account for sheet recomb. But how does it scale with 'a'?'''
         J = self.local_Jsol(V)
-        sheet_power_loss = ((J**2) * self.params['Rsheet'] *
-                            self.params['a']**4) / 12
-        return J * (self.params['a'] ** 2) -\
-            (sheet_power_loss / params['Voc'])
+        # sheet_power_loss = ((J**2) * self.params['Rsheet'] *
+        #                     self.params['a']**4) / 12
+        # return J * (self.params['a'] ** 2) -\
+        #     (sheet_power_loss / params['Voc'])
+
+        # Simpler version with no sheet spreading losses
+        return J * (self.params['a'] ** 2)
 
     def I_shadowed(self, I, V):
         '''Amount of current to subtract due to wire shadowing.'''
@@ -64,7 +68,7 @@ if __name__ == '__main__':
 
     MAX_V = 0.7
 
-    h = dual_diode_handler(params)
+    h = Dual_Diode_Handler(params)
 
     V = np.arange(0, MAX_V, .01)
     J = h.local_Jsol(V)
