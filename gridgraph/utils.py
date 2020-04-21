@@ -6,6 +6,7 @@ from functools import partial
 
 from matplotlib import pyplot as plt
 import numpy as np
+from autograd.numpy.numpy_boxes import ArrayBox as boxtype
 import imageio
 
 
@@ -20,9 +21,15 @@ def param_loader(path):
     return params
 
 
+def safe_val(val):
+    if type(val) == boxtype:
+        return val._value
+    return val
+
+
 def plot_elements(elements, filename=None, w_scale=2, i_scale=1):
-    max_w = np.max([[e.get_w() for e in row] for row in elements])
-    max_I = np.max([[e.I for e in row] for row in elements])
+    max_w = safe_val(np.max([[e.get_w() for e in row] for row in elements]))
+    max_I = safe_val(np.max([[e.I for e in row] for row in elements]))
 
     plt.style.use('dark_background')
     fig, ax = plt.subplots(figsize=(16, 16))
@@ -39,11 +46,13 @@ def plot_elements(elements, filename=None, w_scale=2, i_scale=1):
             elif e.target is not None:
                 x = [e.coords[0], e.target.coords[0]]
                 y = [e.coords[1], e.target.coords[1]]
-                w = e.get_w()
+                w = safe_val(e.get_w())
                 # For flux scaling:
                 # J = e.my_I()/(w)  # For constant width
                 # J = e.I/(w**2)  # For constant area
-                fade = i_scale * e.I / max_I
+                fade = i_scale * safe_val(e.I) / max_I
+                if fade < 0:
+                    fade = 0
                 color = (0.3 + 0.7 * fade, 0.5 + fade * 0.3, 0.7)
                 ax.plot(x, y, linewidth=(w / max_w) * w_scale, color=color)
     if filename:

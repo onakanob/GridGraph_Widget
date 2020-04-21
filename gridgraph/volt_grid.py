@@ -7,23 +7,24 @@ import logging
 from scipy.optimize import minimize
 import autograd
 import autograd.numpy as np
-# from autograd import grad
+from autograd import grad
 
-from .finite_grid import Element, DiffusionGrid
+# from .finite_grid import Element, DiffusionGrid
+from .dynamic_grid import Element, Grid
 
 
 class Voltage_Element(Element):
-    def __init__(self, idx, coords, A, G, elements,  # Is, Vs,
-                 solver, params):
-        self.idx = idx             # My global index
-        self.coords = coords       # My simulation coordinates
-        self._elements = elements  # View of the global element array
-        # self._Is = Is              # View of the global current array
-        # self._Vs = Vs              # View of the global debt array
+    def __init__(self, idx, coords, Voc, A, G, elements, solver, params):
+        super().__init__(idx, coords, A, G, elements)
+        # self.idx = idx             # My global index
+        # self.coords = coords       # My simulation coordinates
+        # self._A = A                # View of the adjacency matrix
+        # self._G = G                # View of the subgraph matrix
+        # self._elements = elements  # View of the global element array
+        # Set initial state to open circuit:
         self.I = 0
-        self.V = None
-        self._A = A                # View of the adjacency matrix
-        self._G = G                # View of the subgraph matrix
+        self.V = Voc
+        self.Voc = Voc
         self.params = params        # View of global simulation params
 
         self.solver = solver    # View of a solver
@@ -32,9 +33,9 @@ class Voltage_Element(Element):
 
     # PROPERTIES #
     # Overwrite parent namespace because we keep local I in this implementation
-    _get_I = None
-    _set_I = None
-    I = None
+    # _get_I = None
+    # _set_I = None
+    # I = None
     # def _get_V(self):
     #     return self._Vs[self.idx]
 
@@ -44,13 +45,11 @@ class Voltage_Element(Element):
     # V = property(fget=lambda self: self._get_V(),
     #              fset=lambda self, val: self._set_V(val))
 
+    def get_w(self):            # TODO Is this necessary? Maybe kill
+        return self.solver.w(self.I)
+
     def update_V(self):
         """Inherit and reduce V from target based on local resistance"""
-        # try:
-        #     self.I = self.I._value
-        # except:
-        #     pass
-
         self.V = self.target.V + self.solver.volt_drop(self.I)
 
     def update_I(self):
@@ -60,8 +59,21 @@ class Voltage_Element(Element):
         self.I = self.solver.I_generated(self.V) + np.sum(inputs)
         self.I -= self.solver.I_shadowed(self.I, self.V)
 
+    def update_target(self):
+        # import ipdb; ipdb.set_trace()
+        if not self.sink:
+            best_nb = self.neighbors[np.argmin([e.V for e in self.neighbors])]
+            if (best_nb.V < self.V) & (best_nb.V < self.Voc):
+                self.target = best_nb
+            # Disconnect and open circuit if no good neighbors exist
+            else:
+                # import ipdb; ipdb.set_trace()
+                self.target = None
+                self.I = 0
+                self.V = self.Voc
 
-class VoltageGrid(DiffusionGrid):
+
+class VoltageGrid(Grid):
     '''Current-gathering grid model'''
     def __init__(self, element_class, solver_type, params):
         res = params['elements_per_side']
@@ -86,14 +98,14 @@ class VoltageGrid(DiffusionGrid):
         # Map out the node indices based on location in a square 2D grid:
         self.idx_map = np.arange(res**2).reshape(res, res)
         solver = solver_type(params)
+        Voc = find_Voc(solver.local_Jsol)
         for i in range(res**2):
             self.elements[i] = element_class(idx=i,
                                         coords=np.where(self.idx_map == i),
+                                        Voc=Voc,
                                         A=self.A,
                                         G=self.G,
                                         elements=self.elements,
-                                        # Is=self.Is,
-                                        # Vs=self.Vs,
                                         solver=solver,
                                         params=self.params)
 
@@ -102,35 +114,46 @@ class VoltageGrid(DiffusionGrid):
         self.sink.sink = True
 
         # TODO determine Voc and set all voltages to Voc
-        Voc = find_Voc(self.sink.solver.local_Jsol)
-
         for e in self.elements:
             self.init_neighbors(e)
-            e.V = Voc
+            # e.V = Voc
+
+    def init_neighbors(self, element):
+        """add neighbors when points are edge-sharing neighbors in the
+        square grid. Temp solution - use inherited coordinate-specific methods
+        as soon as grid creation standalone is working."""
+        idx = np.where(self.idx_map == element.idx)
+        neighbors = []
+        if idx[0] > 0:
+            neighbors.append(self.elements[self.idx_map[idx[0] - 1,
+                                                        idx[1]][0]])
+        if idx[0] < (self.shape[0] - 1):
+            neighbors.append(self.elements[self.idx_map[idx[0] + 1,
+                                                        idx[1]][0]])
+        if idx[1] > 0:
+            neighbors.append(self.elements[self.idx_map[idx[0],
+                                                        idx[1] - 1][0]])
+        if idx[1] < (self.shape[1] - 1):
+            neighbors.append(self.elements[self.idx_map[idx[0],
+                                                        idx[1] + 1][0]])
+        element.neighbors = neighbors
 
     def _get_Vs(self):
+        '''Returns [e.V for e in elements]'''
         return [e.V._value if type(e.V) == autograd.numpy.numpy_boxes.ArrayBox
                 else e.V for e in self.elements]
 
     def _get_Is(self):
+        '''Returns [e.I for e in elements]'''
         return [e.I._value if type(e.I) == autograd.numpy.numpy_boxes.ArrayBox
                 else e.I for e in self.elements]
-        # return [e.I for e in self.elements]
 
     Vs = property(fget=lambda self: self._get_Vs())
     Is = property(fget=lambda self: self._get_Is())
 
-    # TODO inherit or override from here down
-    # def get_I(self):
-    #     # TODO going to not use this approach - kill eventually
-    #     Q = self.walk_graph()
-    #     for i in reversed(Q):
-    #         self.elements[i].update_I()
-    #     return self.sink.I
-
     def power(self, V):
         self.sink.V = V
-        Q = self.walk_graph()
+        Q = self.walk_graph(self.sink)
         for i in Q:
             if not self.elements[i].sink:
                 self.elements[i].update_V()
@@ -138,30 +161,17 @@ class VoltageGrid(DiffusionGrid):
             self.elements[i].update_I()
         return V * self.sink.I
 
-    # def walk_graph(self):
-    #     def safepop(S):
-    #         if len(S) > 0:
-    #             return S.pop()
-    #         return None
+    def element_grid(self):
+        return np.reshape(self.elements, self.shape)
 
-    #     Q = deque()
-    #     S = deque()
-    #     point = self.sink.idx
-    #     while point is not None:
-    #         Q.append(point)
-    #         for e in self.elements[point].donors:
-    #             S.append(e.idx)
-    #         point = safepop(S)
-    #     return Q
+    def update(self, V, lr):
+        dP = grad(self.power)(V)
+        for e in self.elements:
+            e.update_target()
+        return V + lr * dP
 
-    # def __len__(self):
-    #     return np.product(self.shape)
-
-    # def __repr__(self):
-    #     return 'Model with ' + str(self.shape) + ' elements'
-
-    # def element_grid(self):
-    #     return np.reshape(self.elements, self.shape)
+    def __repr__(self):
+        return 'Voltage grid handler containing ' + str(len(self)) + ' elements.'
 
 
 def find_Voc(current_function):
@@ -179,9 +189,9 @@ def find_Voc(current_function):
 if __name__ == '__main__':
     logging.info('Debugging voltage element and voltage_grid objects.')
     from utils import param_loader
-    from .voltage_handlers import dual_diode_handler as handler
+    from volt_handlers import Dual_Diode_Handler as handler
 
-    params = param_loader('./recipes/1 cm test.csv')
+    params = param_loader('../recipes/1 cm test.csv')
     params['elements_per_side'] = 4
 
     grid = VoltageGrid(element_class=Voltage_Element, solver_type=handler,

@@ -64,7 +64,10 @@ class Grid():
             self.init_neighbors(e, crit_radius)
 
     def init_neighbors(self, element, radius):
-        """Add neighbors for any other elements within radius of element."""
+        """Add neighbors for any other elements within radius of element. This
+        will be faster using a global vectorized distance measurement -
+        implement in the future. This will change the interface to receive the
+        global element array and do all assignments internally."""
         def distance(cd1, cd2):
             '''L2 metric distance between two equi-dimensional coordinates.'''
             return np.sqrt(np.sum(np.square(np.subtract(cd1, cd2))))
@@ -87,9 +90,16 @@ class Grid():
         S = deque()
         point = element.idx
         while point is not None:
+            # Unecessary/expensive check if you can guarantee no loops:
             if point not in Q:
                 Q.append(point)
                 for e in self.elements[point].donors:
                     S.append(e.idx)
             point = safepop(S)
         return Q
+
+    def __len__(self):
+        return len(self.elements)
+
+    def __repr__(self):
+        return 'Dynamic grid handler containing ' + str(len(self)) + ' elements.'

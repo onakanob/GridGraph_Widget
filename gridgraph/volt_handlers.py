@@ -5,7 +5,6 @@ Objects to solve solar cell equations
 @author: Oliver
 """
 import autograd.numpy as np
-# import cvxpy as cp
 
 
 class Dual_Diode_Handler():
@@ -41,7 +40,9 @@ class Dual_Diode_Handler():
         return self.local_Jsol(V) * self.params['a'] * self.w(I)
 
     def volt_drop(self, I):
-        return I * self.R(I)
+        if I < 0:
+            print('uh - voltage rose?', str(I))
+        return I * self.R(I) + 1e-10
 
     def R(self, I):
         R_wire = self.params['Pwire'] * self.params['a'] /\
