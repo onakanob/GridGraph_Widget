@@ -33,7 +33,7 @@
 
 ## Specify the working directory for this job
 
-#SBATCH --workdir=/gscratch/stf/onb/GridGraph/experiments
+#SBATCH --chdir=/gscratch/stf/onb/GridGraph/experiments
 
 ##turn on e-mail notification
 
