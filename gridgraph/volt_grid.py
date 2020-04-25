@@ -2,25 +2,18 @@
 generator/diffuser elements in an arbitrary grid pattern"""
 
 import logging
-# from collections import deque
 
 from scipy.optimize import minimize
 import autograd
 import autograd.numpy as np
 from autograd import grad
 
-# from .finite_grid import Element, DiffusionGrid
 from .dynamic_grid import Element, Grid
 
 
 class Voltage_Element(Element):
     def __init__(self, idx, coords, Voc, A, G, elements, solver, params):
         super().__init__(idx, coords, A, G, elements)
-        # self.idx = idx             # My global index
-        # self.coords = coords       # My simulation coordinates
-        # self._A = A                # View of the adjacency matrix
-        # self._G = G                # View of the subgraph matrix
-        # self._elements = elements  # View of the global element array
         # Set initial state to open circuit:
         self.I = 0
         self.V = Voc
@@ -31,33 +24,22 @@ class Voltage_Element(Element):
 
         self.sink = False
 
-    # PROPERTIES #
-    # Overwrite parent namespace because we keep local I in this implementation
-    # _get_I = None
-    # _set_I = None
-    # I = None
-    # def _get_V(self):
-    #     return self._Vs[self.idx]
-
-    # def _set_V(self, val):
-    #     self._Vs[self.idx] = val
-
-    # V = property(fget=lambda self: self._get_V(),
-    #              fset=lambda self, val: self._set_V(val))
-
     def get_w(self):            # TODO Is this necessary? Maybe kill
         return self.solver.w(self.I)
 
     def update_V(self):
         """Inherit and reduce V from target based on local resistance"""
-        self.V = self.target.V + self.solver.volt_drop(self.I)
+        self.V = np.minimum(self.Voc,
+                            self.target.V + self.solver.volt_drop(self.I))
 
     def update_I(self):
         """The 2-diode model needs to assume constant V or I at any given
         moment. To get I, update based on curent donor set and voltage."""
         inputs = [e.I for e in self.donors]  # can be vectorized
-        self.I = self.solver.I_generated(self.V) + np.sum(inputs)
-        self.I -= self.solver.I_shadowed(self.I, self.V)
+        self.I = np.maximum(1e-10,
+                        self.solver.local_I(self.I, self.V) + np.sum(inputs))
+        # self.I = self.solver.I_generated(self.V) + np.sum(inputs)
+        # self.I -= self.solver.I_shadowed(self.I, self.V)
 
     def update_target(self):
         # import ipdb; ipdb.set_trace()
@@ -76,23 +58,20 @@ class Voltage_Element(Element):
 class VoltageGrid(Grid):
     '''Current-gathering grid model'''
     def __init__(self, element_class, solver_type, params):
+        """ Adjacency map A defines the grid on which the simulation will run.
+        This defines each node's neighborhood and is STATIC.
+        Graph map G defines the particular graph that is being solved right
+        now. This defines each node's donors and target and is DYNAMIC.
+        """
         res = params['elements_per_side']
         params['a'] = params['L'] / res
         self.params = params
 
         self.shape = [res, res]
 
-        # Containers for current set of current, debt, and power gradients.
+        # Preallocate all state variables.
         self.elements = np.empty(res**2, dtype=object)
-        # self.Is = np.zeros(res**2)
-        # self.Vs = np.zeros(res**2)
-
-        # Adjacency map defines the grid on which the simulation will run. This
-        # defines each node's neighborhood and is STATIC.
         self.A = np.zeros((res**2, res**2)).astype(bool)
-
-        # Graph map defines the particular graph that is being solved right
-        # now. This defines each node's donors and target and is DYNAMIC.
         self.G = np.zeros((res**2, res**2)).astype(bool)
 
         # Map out the node indices based on location in a square 2D grid:
@@ -100,7 +79,8 @@ class VoltageGrid(Grid):
         solver = solver_type(params)
         Voc = find_Voc(solver.local_Jsol)
         for i in range(res**2):
-            self.elements[i] = element_class(idx=i,
+            self.elements[i] = element_class(
+                                        idx=i,
                                         coords=np.where(self.idx_map == i),
                                         Voc=Voc,
                                         A=self.A,
@@ -113,10 +93,8 @@ class VoltageGrid(Grid):
         self.sink = self.elements[sink_idx]
         self.sink.sink = True
 
-        # TODO determine Voc and set all voltages to Voc
         for e in self.elements:
             self.init_neighbors(e)
-            # e.V = Voc
 
     def init_neighbors(self, element):
         """add neighbors when points are edge-sharing neighbors in the
@@ -151,7 +129,7 @@ class VoltageGrid(Grid):
     Vs = property(fget=lambda self: self._get_Vs())
     Is = property(fget=lambda self: self._get_Is())
 
-    def power(self, V):
+    def solve_power(self, V):
         self.sink.V = V
         Q = self.walk_graph(self.sink)
         for i in Q:
@@ -160,12 +138,15 @@ class VoltageGrid(Grid):
         for i in reversed(Q):
             self.elements[i].update_I()
         return V * self.sink.I
+    
+    def power(self):
+        return self.sink.V * self.sink.I
 
     def element_grid(self):
         return np.reshape(self.elements, self.shape)
 
     def update(self, V, lr):
-        dP = grad(self.power)(V)
+        dP = grad(self.solve_power)(V)
         for e in self.elements:
             e.update_target()
         return V + lr * dP

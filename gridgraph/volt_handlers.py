@@ -15,6 +15,20 @@ class Dual_Diode_Handler():
         k = 1.380649e-23  # Boltzmann constant [J/K]
         self.q_kT = q / (k * self.params['T'])  # exponential term [C/J = 1/V]
 
+    def local_I(self, I, V):
+        ''' Parameters:
+        I : Current element current (from last solver loop)
+        V : Current element over-voltage
+        Returns estimate of local I output based on wire shadowing and locally
+        generated Jsol
+        '''
+        return self.I_generated(V) - self.I_shadowed(I, V)
+
+    def volt_drop(self, I):
+        if I < 0:
+            print('uh - voltage rose?', str(I))
+        return I * self.R(I) + 1e-10
+
     def local_Jsol(self, V):
         '''Local base-level current density based on overvoltage, using a
         2-diode model for solar current.'''
@@ -39,11 +53,6 @@ class Dual_Diode_Handler():
         '''Amount of current to subtract due to wire shadowing.'''
         return self.local_Jsol(V) * self.params['a'] * self.w(I)
 
-    def volt_drop(self, I):
-        if I < 0:
-            print('uh - voltage rose?', str(I))
-        return I * self.R(I) + 1e-10
-
     def R(self, I):
         R_wire = self.params['Pwire'] * self.params['a'] /\
             (np.square(self.w(I)) * self.params['h_scale'] + 1e-20)
@@ -51,7 +60,7 @@ class Dual_Diode_Handler():
 
     def w(self, I):
         '''Wire scaling rule as a function of I.
-        Current version: shadow & power scaling.'''
+        Current version copied from shadow & power scaling.'''
         return ((2 * np.square(I) * self.params['Pwire']) /
             (self.params['Voc'] * self.params['Jsol'] *
              self.params['h_scale'])) ** (1 / 3.)

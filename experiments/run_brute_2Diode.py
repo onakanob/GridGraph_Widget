@@ -7,8 +7,7 @@ and record the class of highest-performing results.
 
 @author: Oliver
 
-TODO EVERYTHING - This is a WIP - need to add convergence tests, etc. Don't run
-this!
+TODO Everything. This isn't ready.'
 """
 
 import os

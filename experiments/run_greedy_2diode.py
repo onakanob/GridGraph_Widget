@@ -29,6 +29,10 @@ if __name__ == '__main__':
                         help='Save all frames and create video of simulation?')
     parser.add_argument('--lr', type=float, default=0.2,
                         help='Applied voltage learning rate.')
+    parser.add_argument('--tolerance', type=float, default=1e-6,
+                        help='Power delta convergence condition.')
+    parser.add_argument('--max_iters', type=int, default=2000,
+                        help='Maximum number of simulations to run.')
 
     args = parser.parse_args()
     params = param_loader(args.recipe_file)
@@ -52,26 +56,26 @@ if __name__ == '__main__':
 
         best_power = 0
         power = 0
-        tol = 1e-4
+        tol = args.tolerance
 
         iters = 0
-        max_iters = 1000
+        max_iters = args.max_iters
         count = 0
-        max_count = 8
+        max_count = 16
 
         pkl_name = os.path.join(save_dir, 'model' + str(res) + '.pickle')
         logging.info('Running model with %.0f squared elements.', res)
 
         V = model.sink.Voc - tol  # starting voltage
+        # rolling_V = []  # TODO
         while (iters < max_iters) and (count < max_count):
-            # ((power - old_power) > tol):
-            # and (count < count_lim):
-            # import ipdb; ipdb.set_trace()
-
+            # Vs = np.reshape(model.Vs, model.shape)  # TODO
+            # Is = np.reshape(model.Is, model.shape)  # TODO
             V = model.update(V, args.lr)
+            # rolling_V.append(V)  # TODO
             power = safe_val(V * model.sink.I)
 
-            logging.info('iter: %s -- power: %.4f', str(iters).zfill(4), power)
+            logging.info('iter: %s -- power: %.6f', str(iters).zfill(4), power)
             iters += 1
             count += 1
             if power > (best_power + tol):
