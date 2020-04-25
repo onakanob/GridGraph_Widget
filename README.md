@@ -1,4 +1,4 @@
 # GridGraph
 Solar grid layout optimizer
 
-Requires: autograd, matplotlib, imageio, spyder
+Requires: autograd, matplotlib, imageio
