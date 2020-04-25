@@ -7,13 +7,27 @@ Objects to solve solar cell equations
 import autograd.numpy as np
 
 
-class dual_diode_handler():
+class Dual_Diode_Handler():
     '''2-diode current, voltage, and wire calculations in a square element.'''
     def __init__(self, params):
         self.params = params
         q = 1.602176634e-19  # elemental charge [C]
         k = 1.380649e-23  # Boltzmann constant [J/K]
         self.q_kT = q / (k * self.params['T'])  # exponential term [C/J = 1/V]
+
+    def local_I(self, I, V):
+        ''' Parameters:
+        I : Current element current (from last solver loop)
+        V : Current element over-voltage
+        Returns estimate of local I output based on wire shadowing and locally
+        generated Jsol
+        '''
+        return self.I_generated(V) - self.I_shadowed(I, V)
+
+    def volt_drop(self, I):
+        if I < 0:
+            print('uh - voltage rose?', str(I))
+        return I * self.R(I) + 1e-10
 
     def local_Jsol(self, V):
         '''Local base-level current density based on overvoltage, using a
@@ -27,17 +41,17 @@ class dual_diode_handler():
         '''May not need to use sheet loss here: 2-diode appropriately tuned
         would account for sheet recomb. But how does it scale with 'a'?'''
         J = self.local_Jsol(V)
-        sheet_power_loss = ((J**2) * self.params['Rsheet'] *
-                            self.params['a']**4) / 12
-        return J * (self.params['a'] ** 2) -\
-            (sheet_power_loss / params['Voc'])
+        # sheet_power_loss = ((J**2) * self.params['Rsheet'] *
+        #                     self.params['a']**4) / 12
+        # return J * (self.params['a'] ** 2) -\
+        #     (sheet_power_loss / params['Voc'])
+
+        # Simpler version with no sheet spreading losses
+        return J * (self.params['a'] ** 2)
 
     def I_shadowed(self, I, V):
         '''Amount of current to subtract due to wire shadowing.'''
         return self.local_Jsol(V) * self.params['a'] * self.w(I)
-
-    def volt_drop(self, I):
-        return I * self.R(I)
 
     def R(self, I):
         R_wire = self.params['Pwire'] * self.params['a'] /\
@@ -46,7 +60,7 @@ class dual_diode_handler():
 
     def w(self, I):
         '''Wire scaling rule as a function of I.
-        Current version: shadow & power scaling.'''
+        Current version copied from shadow & power scaling.'''
         return ((2 * np.square(I) * self.params['Pwire']) /
             (self.params['Voc'] * self.params['Jsol'] *
              self.params['h_scale'])) ** (1 / 3.)
@@ -64,7 +78,7 @@ if __name__ == '__main__':
 
     MAX_V = 0.7
 
-    h = dual_diode_handler(params)
+    h = Dual_Diode_Handler(params)
 
     V = np.arange(0, MAX_V, .01)
     J = h.local_Jsol(V)

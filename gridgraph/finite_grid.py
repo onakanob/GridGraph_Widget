@@ -13,12 +13,12 @@ class Element():
                  solver_type, params):
         self.idx = idx             # My global index
         self.coords = coords       # My simulation coordinates
-        self.__elements = elements  # View of the global element array
-        self.__Is = Is              # View of the global current array
-        self.__debts = debts        # View of the global debt array
-        self.__dPs = dPs            # View of the global dP array
-        self.__A = A                # View of the adjacency matrix
-        self.__G = G                # View of the subgraph matrix
+        self._elements = elements  # View of the global element array
+        self._Is = Is              # View of the global current array
+        self._debts = debts        # View of the global debt array
+        self._dPs = dPs            # View of the global dP array
+        self._A = A                # View of the adjacency matrix
+        self._G = G                # View of the subgraph matrix
         self.params = params        # View of global simulation params
 
         self.solver = solver_type(params)
@@ -32,57 +32,57 @@ class Element():
                              'the resolution of the simulation.')
         self.grad_func = grad(self.solver.loss)
 
-    # PROPERTIES #
-    def __get_I(self):
-        return self.__Is[self.idx]
+    def _get_I(self):
+        return self._Is[self.idx]
 
-    def __set_I(self, val):
-        self.__Is[self.idx] = val
+    def _set_I(self, val):
+        self._Is[self.idx] = val
 
-    I = property(__get_I, __set_I)
+    def _get_debt(self):
+        return self._debts[self.idx]
 
-    def __get_debt(self):
-        return self.__debts[self.idx]
+    def _set_debt(self, val):
+        self._debts[self.idx] = val
 
-    def __set_debt(self, val):
-        self.__debts[self.idx] = val
+    def _get_dP(self):
+        return self._dPs[self.idx]
 
-    debt = property(__get_debt, __set_debt)
+    def _set_dP(self, val):
+        self._dPs[self.idx] = val
 
-    def __get_dP(self):
-        return self.__dPs[self.idx]
+    def _get_neighbors(self):
+        return self._elements[self._A[self.idx, :]]
 
-    def __set_dP(self, val):
-        self.__dPs[self.idx] = val
+    def _set_neighbors(self, indices):
+        self._A[self.idx, indices] = True
 
-    dP = property(__get_dP, __set_dP)
+    def _get_donors(self):
+        return self._elements[self._G[self.idx, :]]
 
-    def __get_neighbors(self):
-        return self.__elements[self.__A[self.idx, :]]
-
-    def __set_neighbors(self, indices):
-        self.__A[self.idx, indices] = True
-
-    neighbors = property(__get_neighbors, __set_neighbors)
-
-    def __get_donors(self):
-        return self.__elements[self.__G[self.idx, :]]
-    donors = property(__get_donors)
-
-    def __get_target(self):
-        target = self.__elements[self.__G[:, self.idx]]
+    def _get_target(self):
+        target = self._elements[self._G[:, self.idx]]
         if not target.size > 0:
             return None
         return target[0]
 
-    def __set_target(self, e):
+    def _set_target(self, e):
         if self.target is not None:
-            self.__G[self.target.idx, self.idx] = False
+            self._G[self.target.idx, self.idx] = False
         if e is not None:
             if not self.sink:
-                self.__G[e.idx, self.idx] = True
+                self._G[e.idx, self.idx] = True
 
-    target = property(__get_target, __set_target)
+    I = property(fget=lambda self: self._get_I(),
+                 fset=lambda self, val: self._set_I(val))
+    debt = property(fget=lambda self: self._get_debt(),
+                    fset=lambda self, val: self._set_debt(val))
+    dP = property(fget=lambda self: self._get_dP(),
+                  fset=lambda self, val: self._set_dP(val))
+    neighbors = property(fget=lambda self: self._get_neighbors(),
+                         fset=lambda self, val: self._set_neighbors(val))
+    target = property(fget=lambda self: self._get_target(),
+                      fset=lambda self, val: self._set_target(val))
+    donors = property(fget=lambda self: self._get_donors())
 
     def get_w(self):
         return self.solver.w(self.I)
