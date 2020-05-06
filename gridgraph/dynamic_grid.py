@@ -97,6 +97,18 @@ class Grid():
                     S.append(e.idx)
             point = safepop(S)
         return Q
+    
+    def layout(self):
+        return dict(zip(list(range(len(self.elements))),
+                        [e.coords for e in self.elements]))
+
+    def mesh(self):
+        '''A list of edges defined in self.A, representing node neighbors.'''
+        return np.where(np.triu(self.A))  # A is always undirected
+
+    def edges(self):
+        '''A list of edges defined in self.A, representing node neighbors.'''
+        return np.where(np.triu(self.G | self.G.T))  # G is directed
 
     def __len__(self):
         return len(self.elements)
