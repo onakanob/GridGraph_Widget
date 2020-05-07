@@ -4,6 +4,7 @@ implementation supports single-target/multi-donor."""
 
 from collections import deque
 import numpy as np
+import networkx as nx
 
 
 class Element():
@@ -15,7 +16,9 @@ class Element():
         self._elements = elements  # View of the global elements array
 
     def _get_neighbors(self):
+        # import ipdb; ipdb.set_trace()
         return self._elements[self._A[self.idx, :]]
+        # return [self._elements[i] for i in np.where(self._A[self.idx, :])]
 
     def _set_neighbors(self, elements):
         indices = [e.idx for e in elements]
@@ -24,6 +27,7 @@ class Element():
 
     def _get_donors(self):
         return self._elements[self._G[self.idx, :]]
+        # return [self._elements[i] for i in np.where(self._G[self.idx, :])]
 
     def _get_target(self):
         target = self._elements[self._G[:, self.idx]]
@@ -47,21 +51,41 @@ class Element():
 class Grid():
     '''Handler for a collection of Elements and back-end state arrays to
     implement a dynamic graph.'''
-    def __init__(self, coords, element_class, crit_radius):
-        self.elements = np.empty(len(coords), dtype=object)  # element list
-        # mesh adjacency (immutable once set)
-        self.A = np.zeros((len(coords), len(coords))).astype(bool)
-        # subgraph adjacency (mutable)
-        self.G = np.zeros((len(coords), len(coords))).astype(bool)
+    def __init__(self, crit_radius=1, element_class=None, coords=None):
+        # self.elements = np.empty(len(coords), dtype=object)  # element list
+        self.crit_radius = crit_radius
+        self.elements = []
+        # self.elements = np.empty(np.maximum(100, len(coords)), dtype=object)
+        # self.length = 0
 
-        for i, coord in enumerate(coords):
-            self.elements[i] = element_class(idx=i,
-                                             coords=coord,
-                                             A=self.A,
-                                             G=self.G,
-                                             elements=self.elements)
+        # mesh adjacency (immutable once set)
+        self.A = nx.Graph()
+        # self.A = np.zeros((len(coords), len(coords))).astype(bool)
+        # subgraph adjacency (mutable)
+        self.G = nx.DiGraph()
+        # self.G = np.zeros((len(coords), len(coords))).astype(bool)
+
+        for i, coords in enumerate(coords):
+            self.add_element(idx=i,
+                             coords=coords,
+                             eclass=element_class)
+            # self.elements[i] = element_class(idx=i,
+            #                                  coords=coords,
+            #                                  A=self.A,
+            #                                  G=self.G,
+            #                                  elements=self.elements)
         for e in self.elements:
             self.init_neighbors(e, crit_radius)
+
+    def add_element(self, idx, coords, eclass):
+        self.elements.append(eclass(idx=idx,
+                                    coords=coords,
+                                    A=self.A,
+                                    G=self.G,
+                                    elements=self.elements))
+        self.A.add_node(idx)
+        self.G.add_node(idx)
+        self.init_neighbors(self.elements[-1], self.crit_radius)
 
     def init_neighbors(self, element, radius):
         """Add neighbors for any other elements within radius of element. This
@@ -97,21 +121,24 @@ class Grid():
                     S.append(e.idx)
             point = safepop(S)
         return Q
-    
+
     def layout(self):
         return dict(zip(list(range(len(self.elements))),
                         [e.coords for e in self.elements]))
 
     def mesh(self):
         '''A list of edges defined in self.A, representing node neighbors.'''
-        return np.where(np.triu(self.A))  # A is always undirected
+        # return np.where(np.triu(self.A))  # A is always undirected
+        return self.A.edges()
 
     def edges(self):
         '''A list of edges defined in self.A, representing node neighbors.'''
-        return np.where(np.triu(self.G | self.G.T))  # G is directed
+        # return np.where(np.triu(self.G | self.G.T))  # G is directed
+        return self.G.edges()
 
     def __len__(self):
         return len(self.elements)
 
     def __repr__(self):
-        return 'Dynamic grid handler containing ' + str(len(self)) + ' elements.'
+        return 'Dynamic grid handler containing ' + str(len(self)) +\
+            ' elements.'
