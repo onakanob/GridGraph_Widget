@@ -10,6 +10,24 @@ from autograd.numpy.numpy_boxes import ArrayBox as boxtype
 import imageio
 
 
+def grid_generator(resolution, size=1, type='square'):
+    '''return an array of tuple pairs of coordinates.'''
+    if type == 'square':
+        locs = np.linspace(0, size, resolution)
+        grid = []
+        for y in locs:
+            for x in locs:
+                grid.append((x, y))
+        return grid
+    elif type == 'triangle':
+        raise ValueError('Triangle grid is not implemented.')
+    elif type == 'hex':
+        raise ValueError('Hex grid is not implemented.')
+    else:
+        raise ValueError('Grid type ' + str(type) +
+                         ' is not valid.')
+
+
 def param_loader(path):
     '''Read a csv containing value/spread pairs of hyperparameters into a
     dictionary.'''

@@ -3,10 +3,11 @@
 import logging
 import autograd.numpy as np
 
-from .finite_grid import Element, DiffusionGrid
+# from .finite_grid import Element, DiffusionGrid
+from .debt_grid import DebtElement, DiffusionGrid
 
 
-class GreedyElement(Element):
+class GreedyElement(DebtElement):
     def update_target(self):
         if not self.sink:
             neighbors = self.neighbors

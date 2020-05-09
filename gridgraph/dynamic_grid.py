@@ -59,12 +59,15 @@ class Grid():
         # subgraph adjacency (mutable - reflects targeting decisions)
         self.G = nx.DiGraph()
 
-        for i, coords in enumerate(coordinates):
-            self.add_element(idx=i,
-                             coords=coords,
-                             eclass=element_class)
+        if coordinates:
+            for i, coords in enumerate(coordinates):
+                self.add_element(idx=i,
+                                 coords=coords,
+                                 eclass=element_class)
 
     def add_element(self, idx, coords, eclass):
+        if idx is None:
+            idx = len(self)
         self.elements.append(eclass(idx=idx,
                                     coords=coords,
                                     A=self.A,
@@ -72,9 +75,9 @@ class Grid():
                                     elements=self.elements))
         self.A.add_node(idx)
         self.G.add_node(idx)
-        self.init_neighbors(self.elements[-1], self.crit_radius)
+        self.init_neighbors(self.elements[-1])
 
-    def init_neighbors(self, element, radius):
+    def init_neighbors(self, element):
         """Add neighbors for any other elements within radius of element. This
         will be faster using a global vectorized distance measurement -
         implement in the future. This will change the interface to receive the
@@ -86,9 +89,18 @@ class Grid():
         element.clear_neighbors()  # Clean slate
         for e in self.elements:
             if (e.idx != element.idx) & \
-               (distance(element.coords, e.coords) <= radius):
+               (distance(element.coords, e.coords) <= self.crit_radius):
                 element.add_neighbor(e)
                 # TODO: add edge length attribute
+
+    def change_radius(self, radius):
+        self.crit_radius = radius
+        [e.clear_neighbors() for e in self.elements]
+        nghbs = np.array([e.coords for e in self.elements])
+        nghbs = np.sqrt(np.square(nghbs[:, None, :] - nghbs[None, :, :]).sum(2))
+        nghbs = np.where(np.triu((nghbs <= radius) & (nghbs > 0)))
+        for i, e in enumerate(nghbs[0]):
+            self.elements[e].add_neighbor(self.elements[nghbs[1][i]])
 
     def walk_graph(self, element):
         """Generate a roots-up ordered walk of the subgraph G starting at
@@ -114,14 +126,18 @@ class Grid():
 
     def mesh(self):
         '''A list of edges defined in self.A, representing node neighbors.'''
-        edge_dict = dict(zip(['start', 'end'], zip(*self.A.edges())))
-        return edge_dict
+        edges = self.A.edges()
+        if not edges:
+            return {'start': [], 'end': []}
+        return dict(zip(['start', 'end'], zip(*edges)))
 
     def edges(self):
         '''A list of edges defined in self.G, representing node neighbors as a
         dictionary with 'start' and 'end' keys.'''
-        edge_dict = dict(zip(['start', 'end'], zip(*self.G.edges())))
-        return edge_dict
+        edges = self.G.edges()
+        if not edges:
+            return {'start': [], 'end': []}
+        return dict(zip(['start', 'end'], zip(*edges)))
 
     def __len__(self):
         return len(self.elements)

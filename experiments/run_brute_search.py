@@ -18,9 +18,11 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 sys.path.append('..')
-from gridgraph.finite_grid import DiffusionGrid, Element
+# from gridgraph.finite_grid import DiffusionGrid, Element
+from gridgraph.debt_grid import DebtElement, DiffusionGrid
 from gridgraph.power_handlers import lossy_handler
-from gridgraph.utils import param_loader, set_logger, plot_elements, graph_by_idx
+from gridgraph.utils import param_loader, set_logger, plot_elements,\
+    graph_by_idx, grid_generator
 
 
 if __name__ == '__main__':
@@ -45,12 +47,19 @@ if __name__ == '__main__':
     logging.info('Logging brute force search to %s', args.log_dir)
 
     # all_results = {}
-    for res in range(1, args.max_res + 1):
+    for res in range(2, args.max_res + 1):
         try:
             t = time.time()
             params['elements_per_side'] = res
-            model = DiffusionGrid(element_class=Element,
-                                  solver_type=lossy_handler, params=params)
+            coords = grid_generator(resolution=res,
+                                    type='square',
+                                    size=params['L'])
+            model = DiffusionGrid(element_class=DebtElement,
+                                  solver_type=lossy_handler,
+                                  params=params,
+                                  coordinates=coords,
+                                  crit_radius=params['L'] / (res - 1))
+            # import ipdb; ipdb.set_trace()
 
             degrees = np.array([len(n.neighbors) if not n.sink else 1 for n in
                                 model.elements]).astype('double')
@@ -58,7 +67,7 @@ if __name__ == '__main__':
             results = np.zeros(degrees.prod().astype('int'))
 
             logging.info(f'Running all {res}-square grids:' +
-                         ' {len(results)} possible.')
+                         f' {len(results)} possible.')
 
             for i, _ in enumerate(results):
                 graph_by_idx(i, model, degrees)
@@ -68,7 +77,7 @@ if __name__ == '__main__':
 
             # all_results[res] = results
             logging.info(f'completed res {res} after ' +
-                         '{(time.time()-t)/60} minutes')
+                         f'{(time.time()-t) / 60} minutes')
 
             logging.info(f'Run took {(time.time()-t) / len(results)} sec/iter')
 
@@ -82,10 +91,11 @@ if __name__ == '__main__':
             best_graphs = np.argwhere(results == np.amax(results))
             for i in best_graphs:
                 graph_by_idx(i, model, degrees)
-                model.power()
-                plot_elements(model.element_grid(),
-                              filename=os.path.join(args.log_dir, str(res) +
-                                                    'per_' + str(i) + '.png'))
+                print(model.power())
+                # TODO update save fig with bokeh
+                # plot_elements(model.element_grid(),
+                #               filename=os.path.join(args.log_dir, str(res) +
+                #                                     'per_' + str(i) + '.png'))
 
         except Exception as e:
             logging.error(f'failed to parse resolution {res}')

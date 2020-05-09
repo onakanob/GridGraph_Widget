@@ -4,14 +4,15 @@ stochastic gradient ascent on bandit flow routers."""
 import autograd.numpy as np
 from numpy.random import choice
 
-from .finite_grid import Element, DiffusionGrid
+# from .finite_grid import Element, DiffusionGrid
+from .debt_grid import DebtElement, DiffusionGrid
 
 
 def softmax(x):
     return np.e ** x / np.sum(np.e ** x)
 
 
-class BanditElement(Element):
+class BanditElement(DebtElement):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.H = None           # Placeholder for selection probability vector
