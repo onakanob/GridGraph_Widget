@@ -4,7 +4,7 @@ import pickle
 import logging
 from functools import partial
 
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 import numpy as np
 from autograd.numpy.numpy_boxes import ArrayBox as boxtype
 import imageio
