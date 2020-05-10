@@ -58,8 +58,7 @@ if __name__ == '__main__':
                                   solver_type=lossy_handler,
                                   params=params,
                                   coordinates=coords,
-                                  crit_radius=params['L'] / (res - 1))
-            # import ipdb; ipdb.set_trace()
+                                  crit_radius=1e-5 + params['L'] / (res - 1))
 
             degrees = np.array([len(n.neighbors) if not n.sink else 1 for n in
                                 model.elements]).astype('double')

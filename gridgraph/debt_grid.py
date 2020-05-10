@@ -2,10 +2,8 @@
 optimization model that uses power debt messaging to update current flow and
 wire scaling."""
 
-
-import logging
-from collections import deque
-
+# import logging
+# from collections import deque
 import autograd.numpy as np
 from autograd import grad
 
@@ -52,11 +50,10 @@ class DebtElement(Element):
 
     def _set_target(self, e):
         '''Override set target to avoid giving targets to sinks'''
-        self._G.remove_edges_from(list(self._G.out_edges(self.idx)))        
+        self._G.remove_edges_from(list(self._G.out_edges(self.idx)))
         if e is not None:
             if not self.sink:
                 self._G.add_edge(self.idx, e.idx)
-
 
     I = property(fget=lambda self: self._get_I(),
                  fset=lambda self, val: self._set_I(val))
@@ -92,12 +89,14 @@ class DiffusionGrid(Grid):
         self.Is = []
         self.debts = []
         self.dPs = []
-        self.solver=solver_type(params)
+        self.solver = solver_type(params)
 
         super().__init__(crit_radius, element_class, coordinates)
 
-        self.sink = self.elements[0]  # TODO Temp just use element 0 as sink
-        self.sink.sink = True
+        self.sinks = []
+        self.sinks.append(self.elements[0])  # TODO Temp use element 0 as sink
+        for sink in self.sinks:
+            sink.sink = True
 
     def add_element(self, idx, coords, eclass):
         """override add_element to accomodate expanded element init call."""
@@ -121,11 +120,13 @@ class DiffusionGrid(Grid):
         self.init_neighbors(self.elements[-1])
 
     def power(self):
-        Q = self.walk_graph(self.sink)
-        for i in reversed(Q):
-            self.elements[i].update_I()
-        y = self.sink.I * self.params['Voc'] - self.sink.debt
-        return y
+        total = []
+        for sink in self.sinks:
+            Q = self.walk_graph(sink)
+            for i in reversed(Q):
+                self.elements[i].update_I()
+            total.append(sink.I * self.params['Voc'] - sink.debt)
+        return sum(total)
 
     def __repr__(self):
         return "DiffusionGrid model with " + str(len(self)) + " elements."

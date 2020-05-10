@@ -7,7 +7,9 @@ import autograd.numpy as np
 from .debt_grid import DebtElement, DiffusionGrid
 
 
-class GreedyElement(DebtElement):
+class GreedyDebtElement(DebtElement):
+    '''Debt-passing element with greedy target seeking behavior based on dP
+    value. TODO future: move dPs definitions to this local scope.'''
     def update_target(self):
         if not self.sink:
             neighbors = self.neighbors
@@ -17,6 +19,9 @@ class GreedyElement(DebtElement):
                 self.target = neighbors[np.argmax(local_dPs)]
             else:
                 self.target = None
+                self.dP = 0
+                self.I = 0
+                self.debt = 0
 
     def update_dP(self):
         if self.sink is True:
@@ -29,21 +34,26 @@ class GreedyElement(DebtElement):
 
 
 class GreedyGrid(DiffusionGrid):
-    def __init__(self, solver_type, params):
-        super().__init__(element_class=GreedyElement, 
-                         solver_type=solver_type,
-                         params=params)
+    # def __init__(self, solver_type, params, element_class=GreedyDebtElement,
+    #              coordinates=None, crit_radius=1):
+    #     super().__init__(element_class=GreedyDebtElement,
+    #                      solver_type=solver_type,
+    #                      params=params,
+    #                      crit_radius=crit_radius,
+    #                      coordinates=coordinates)
 
-    def power(self):
-        Q = self.walk_graph()
-        for i in Q:
-            self.elements[i].update_dP()
+    def power_and_update(self):
+        total = []
+        for sink in self.sinks:
+            Q = self.walk_graph(sink)
+            for i in reversed(Q):
+                self.elements[i].update_I()
+            total.append(sink.I * self.params['Voc'] - sink.debt)
+            for i in Q:
+                self.elements[i].update_dP()
         for e in self.elements:
             e.update_target()
-        for i in reversed(Q):
-            self.elements[i].update_I()
-        y = self.sink.I * self.params['Voc'] - self.sink.debt
-        return y
+        return sum(total)
 
 
 if __name__ == '__main__':

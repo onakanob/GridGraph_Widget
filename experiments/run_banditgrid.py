@@ -9,8 +9,9 @@ import argparse
 import autograd.numpy as np
 
 sys.path.append('..')
-from gridgraph.utils import param_loader, set_logger, plot_elements, make_gif
-from gridgraph.banditgrid import BanditGrid
+from gridgraph.utils import param_loader, set_logger, plot_elements, make_gif,\
+    grid_generator
+from gridgraph.banditgrid import BanditGrid, BanditDebtElement
 from gridgraph.power_handlers import lossy_handler
 
 if __name__ == '__main__':
@@ -23,7 +24,7 @@ if __name__ == '__main__':
                         default='./TEMP/',
                         help='Output directory.')
     parser.add_argument('--resolutions', type=str,
-                        default='27',
+                        default='8',  # 27
                         help='Comma-delim list of grid lengths to simulate.')
     parser.add_argument('--save_video', action='store_true', default=False,
                         help='Save all frames and create video of simulation?')
@@ -45,8 +46,15 @@ if __name__ == '__main__':
 
     for res in resolutions:
         t = time.time()
+        coords = grid_generator(resolution=res,
+                                type='square',
+                                size=params['L'])
         params['elements_per_side'] = res
-        model = BanditGrid(solver_type=lossy_handler, params=params)
+        model = BanditGrid(element_class=BanditDebtElement,
+                           solver_type=lossy_handler,
+                           params=params,
+                           crit_radius=1e-5 + params['L'] / (res - 1),
+                           coordinates=coords)
 
         save_dir = os.path.join(args.log_dir, 'model_' + str(res))
         if not os.path.exists(save_dir):
@@ -59,38 +67,31 @@ if __name__ == '__main__':
         logging.info('Bandit run for model with %.0f squared elements.', res)
         while iters < args.max_iters:
             model.generate_grid()
-            power = model.power()
-            model.update_weights(power)
+            power = model.power_and_train()
+            # model.update_weights(power)  # Don't need with new organization
             iters += 1
             if power > best_power:
                 logging.info('iter: %s -- power: %.4f',
                              str(iters).zfill(4), power)
                 if not args.save_video:
                     try:
-                        # with open(pkl_name, 'rb') as f:
-                        #     model.elements = pickle.load(f)
-                        plot_elements(model.element_grid(),
-                                      filename=os.path.join(save_dir,
-                                                str(iters).zfill(4) + '.png'),
-                                      w_scale=16, i_scale=1)
+                        pass
+                        # plot_elements(model.element_grid(),
+                        #               filename=os.path.join(save_dir,
+                        #                         str(iters).zfill(4) + '.png'),
+                        #               w_scale=16, i_scale=1)
                     except IOError as err:
                         logging.error('Best-yet grid image failed to save.')
                         logging.error(err)
-                # try:
-                #     with open(pkl_name, 'wb') as f:
-                #         pickle.dump(model.elements, f)
-                # except IOError as err:
-                #     logging.error('Model failed save to pickle')
-                #     logging.error(err)
-
                 best_power = power
 
             if args.save_video:
                 try:
-                    plot_elements(model.element_grid(),
-                                  filename=os.path.join(save_dir,
-                                                str(iters).zfill(4) + '.png'),
-                                  w_scale=16, i_scale=1)
+                    pass
+                    # plot_elements(model.element_grid(),
+                    #               filename=os.path.join(save_dir,
+                    #                             str(iters).zfill(4) + '.png'),
+                    #               w_scale=16, i_scale=1)
                 except IOError as err:
                     logging.error('Image failed to save.')
                     logging.error(err)

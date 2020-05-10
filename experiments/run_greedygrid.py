@@ -7,8 +7,9 @@ import argparse
 import autograd.numpy as np
 
 path.append('..')
-from gridgraph.utils import param_loader, set_logger, plot_elements, make_gif
-from gridgraph.greedygrid import GreedyGrid
+from gridgraph.utils import param_loader, set_logger, plot_elements, make_gif,\
+    grid_generator
+from gridgraph.greedygrid import GreedyGrid, GreedyDebtElement
 from gridgraph.power_handlers import lossy_handler
 
 if __name__ == '__main__':
@@ -37,8 +38,15 @@ if __name__ == '__main__':
 
     for res in resolutions:
         t = time.time()
+        coords = grid_generator(resolution=res,
+                                type='square',
+                                size=params['L'])
         params['elements_per_side'] = res
-        model = GreedyGrid(solver_type=lossy_handler, params=params)
+        model = GreedyGrid(element_class=GreedyDebtElement,
+                           solver_type=lossy_handler,
+                           params=params,
+                           crit_radius=1e-5 + params['L'] / (res - 1),
+                           coordinates=coords)
 
         save_dir = os.path.join(args.log_dir, 'model_' + str(res))
         if not os.path.exists(save_dir):
@@ -58,7 +66,7 @@ if __name__ == '__main__':
               (power != old_power) and \
               (count < count_lim):
             old_power = power
-            power = model.power()
+            power = model.power_and_update()
             logging.info('iter: %s -- power: %.4f', str(iters).zfill(4), power)
             iters += 1
             count += 1

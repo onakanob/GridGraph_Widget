@@ -97,7 +97,8 @@ class Grid():
         self.crit_radius = radius
         [e.clear_neighbors() for e in self.elements]
         nghbs = np.array([e.coords for e in self.elements])
-        nghbs = np.sqrt(np.square(nghbs[:, None, :] - nghbs[None, :, :]).sum(2))
+        nghbs = np.sqrt(np.square(
+            nghbs[:, None, :] - nghbs[None, :, :]).sum(2))
         nghbs = np.where(np.triu((nghbs <= radius) & (nghbs > 0)))
         for i, e in enumerate(nghbs[0]):
             self.elements[e].add_neighbor(self.elements[nghbs[1][i]])
