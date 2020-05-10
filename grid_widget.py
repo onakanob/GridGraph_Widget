@@ -4,16 +4,15 @@ Left click - place a node.
 Button - solve the graph.
 Button - clear all nodes."""
 
+import time
+
 from numpy.random import choice
 
-from gridgraph.debt_grid import DebtElement as Element, DiffusionGrid as Grid
+from gridgraph.greedygrid import GreedyDebtElement as Element, GreedyGrid as Grid
 from gridgraph.power_handlers import lossy_handler
 from gridgraph.utils import param_loader, grid_generator
 
-# from gridgraph.dynamic_grid import Element, Grid
-# from gridgraph.debt_grid import Element, DiffusionGrid
-
-from bokeh.io import curdoc
+from bokeh.io import curdoc, show
 from bokeh.layouts import column
 from bokeh.models import Plot, Circle, Range1d, StaticLayoutProvider,\
     GraphRenderer
@@ -21,15 +20,15 @@ from bokeh.models.widgets import Button, Slider, Div
 from bokeh.events import Tap, DoubleTap
 
 
-# >> Initial Simulation Setup << #
+# >> Simulation Initialization << #
 RECIPE_FILE = './recipes/1 cm test.csv'
 params = param_loader(RECIPE_FILE)
 
-# TODO temp: start with a 3x3
-RES = 7
+RES = 12
 params['elements_per_side'] = RES  # TODO kill this
 crit_radius = 1e-6 + params['L'] / (RES - 1)
-coords = grid_generator(resolution=RES, size=params['L'], type='square')
+# coords = grid_generator(resolution=RES, size=params['L'], type='square')
+coords = grid_generator(resolution=RES, size=params['L'], type='rand')
 mygrid = Grid(coordinates=coords,
               element_class=Element,
               crit_radius=crit_radius,
@@ -37,10 +36,11 @@ mygrid = Grid(coordinates=coords,
               params=params)
 power = mygrid.power()
 
-# >> Initial GUI Setup << #
+
+# >> GUI Initialization << #
 plot = Plot(x_range=Range1d(-.1, 1.1), y_range=Range1d(-.1, 1.1))
 plot.background_fill_color = "midnightblue"
-plot.background_fill_alpha = .6
+plot.background_fill_alpha = .8
 
 layout = StaticLayoutProvider(graph_layout=mygrid.layout())
 
@@ -56,7 +56,7 @@ mesh.edge_renderer.glyph.line_color = 'silver'
 graph = GraphRenderer()
 graph.layout_provider = layout
 graph.node_renderer.visible = False
-graph.edge_renderer.glyph.line_width = 4
+graph.edge_renderer.glyph.line_width = 3.5
 graph.edge_renderer.glyph.line_color = 'hotpink'
 # TODO colormap based on current, width based on wire width
 
@@ -72,19 +72,56 @@ plot.renderers.append(graph)
 plot.renderers.append(nodes)
 
 
+class solver_state:
+    pass
+
+
+state = solver_state()
+state.last_power = -1
+state.solver_process = None
+
+
 # >> Callback Functions << #
-def render():
-    '''Generic re-render all screen space objects.'''
+def render(power=None):
+    '''Re-render pass: reassign model space data to screen space objects.'''
+    if power is None:
+        power = mygrid.power()
+
     power_readout.text = '<p style="font-size:24px"> Power Output: ' +\
-        str(round(mygrid.power() * 1e3, 3)) + ' milliwatts</p>'
+        str(round(power * 1e3, 3)) + ' milliwatts</p>'
     layout.graph_layout = mygrid.layout()
     mesh.edge_renderer.data_source.data = mygrid.mesh()
     graph.edge_renderer.data_source.data = mygrid.edges()
     nodes.node_renderer.data_source.data['index'] = list(range(len(mygrid)))
 
 
-def solve_loop():
-    
+def step_grid(loop=False):
+    '''Alternate graph update steps with rendering until the solution
+    converges.'''
+    power = mygrid.power_and_update()
+    render(power)
+    if loop:
+        if state.last_power == power:
+            stop_solver()
+            state.last_power = -1
+        else:
+            state.last_power = power
+
+
+def run_solver():
+    if state.solver_process is None:
+        state.solver_process = curdoc().add_periodic_callback(
+            lambda: step_grid(loop=True), 250)
+        solve_button.label = 'Halt Solver'
+    else:
+        stop_solver()
+
+
+def stop_solver():
+    curdoc().remove_periodic_callback(state.solver_process)
+    state.solver_process = None
+    solve_button.label = 'Solve Grid'
+
 
 def randomize_grid():
     for e in mygrid.elements:
@@ -93,7 +130,6 @@ def randomize_grid():
         else:
             e.target = None
     render()
-    # graph.edge_renderer.data_source.data = mygrid.edges()
 
 
 def add_point(event):
@@ -102,10 +138,6 @@ def add_point(event):
                        coords=coords,
                        eclass=Element)
     render()
-    # layout.graph_layout = mygrid.layout()
-    # mesh.edge_renderer.data_source.data = mygrid.mesh()
-    # graph.edge_renderer.data_source.data = mygrid.edges()
-    # nodes.node_renderer.data_source.data['index'] = list(range(len(mygrid)))
 
 
 def set_radius(attr, old, new):
@@ -113,16 +145,20 @@ def set_radius(attr, old, new):
         e.target = None
     mygrid.change_radius(radius_slider.value)
     render()
-    # graph.edge_renderer.data_source.data = mygrid.edges()
-    # mesh.edge_renderer.data_source.data = mygrid.mesh()
 
 
-# >> Widgets and Behaviors << #
-rand_button = Button(label='randomize grid')
+# >> Define Widgets << #
+rand_button = Button(label='Randomize Grid')
 rand_button.on_click(randomize_grid)
 
-radius_slider = Slider(title="radius", value=crit_radius, start=0.0, end=1.0,
-                step=0.05)
+step_button = Button(label='Step Grid')
+step_button.on_click(step_grid)
+
+solve_button = Button(label='Solve Grid')
+solve_button.on_click(run_solver)
+
+radius_slider = Slider(title="radius", value=crit_radius,
+                       start=0.0, end=1.0, step=0.01)
 radius_slider.on_change('value', set_radius)
 
 power_readout = Div()
@@ -131,5 +167,10 @@ plot.on_event(Tap, add_point)   # Why is this so slow?
 # plot.on_event(DoubleTap, add_sink)  # TODO
 
 render()
-final_form = column(rand_button, radius_slider, plot, power_readout)
+final_form = column(rand_button,
+                    radius_slider,
+                    plot,
+                    step_button,
+                    solve_button,
+                    power_readout)
 curdoc().add_root(final_form)

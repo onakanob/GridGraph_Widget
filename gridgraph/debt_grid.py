@@ -94,6 +94,7 @@ class DiffusionGrid(Grid):
         super().__init__(crit_radius, element_class, coordinates)
 
         self.sinks = []
+        self.sinks.append(self.elements[-1])  # TODO Temp use element 0 as sink
         self.sinks.append(self.elements[0])  # TODO Temp use element 0 as sink
         for sink in self.sinks:
             sink.sink = True

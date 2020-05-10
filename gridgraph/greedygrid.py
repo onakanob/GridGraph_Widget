@@ -43,6 +43,7 @@ class GreedyGrid(DiffusionGrid):
     #                      coordinates=coordinates)
 
     def power_and_update(self):
+        self.dPs = [0] * len(self.dPs)
         total = []
         for sink in self.sinks:
             Q = self.walk_graph(sink)
@@ -51,6 +52,8 @@ class GreedyGrid(DiffusionGrid):
             total.append(sink.I * self.params['Voc'] - sink.debt)
             for i in Q:
                 self.elements[i].update_dP()
+        # for e in self.elements:
+        #     e.update_dP()
         for e in self.elements:
             e.update_target()
         return sum(total)

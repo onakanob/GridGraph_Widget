@@ -19,6 +19,9 @@ def grid_generator(resolution, size=1, type='square'):
             for x in locs:
                 grid.append((x, y))
         return grid
+    elif type == 'rand':
+        # Generate the same number of points as the equiv.-size square:
+        return [tuple(np.random.rand(2) * size) for _ in range(resolution**2)]
     elif type == 'triangle':
         raise ValueError('Triangle grid is not implemented.')
     elif type == 'hex':
