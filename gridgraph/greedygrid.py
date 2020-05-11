@@ -3,8 +3,7 @@
 import logging
 import autograd.numpy as np
 
-# from .finite_grid import Element, DiffusionGrid
-from .debt_grid import DebtElement, DiffusionGrid
+from .debt_grid import DebtElement, DebtGrid
 
 
 class GreedyDebtElement(DebtElement):
@@ -30,32 +29,23 @@ class GreedyDebtElement(DebtElement):
             dP = self.target.dP
         else:
             dP = 0
-        self.dP = dP - self.grad_func(float(self.I) + 1e-20)
+        # self.dP = dP - self.grad_func(float(self.I) + 1e-20)
+        diff = self.grad_func(float(self.I) + 1e-20)
+        if diff <= 0:
+            print('differential is negative?')
+        self.dP = dP - diff
 
 
-class GreedyGrid(DiffusionGrid):
-    # def __init__(self, solver_type, params, element_class=GreedyDebtElement,
-    #              coordinates=None, crit_radius=1):
-    #     super().__init__(element_class=GreedyDebtElement,
-    #                      solver_type=solver_type,
-    #                      params=params,
-    #                      crit_radius=crit_radius,
-    #                      coordinates=coordinates)
-
+class GreedyGrid(DebtGrid):
     def power_and_update(self):
-        self.dPs = [0] * len(self.dPs)
         total = []
         for sink in self.sinks:
             Q = self.walk_graph(sink)
             for i in reversed(Q):
                 self.elements[i].update_I()
             total.append(sink.I * self.params['Voc'] - sink.debt)
-            for i in Q:
-                self.elements[i].update_dP()
-        # for e in self.elements:
-        #     e.update_dP()
-        for e in self.elements:
-            e.update_target()
+        [e.update_dP() for e in self.elements]
+        [e.update_target() for e in self.elements]
         return sum(total)
 
 
@@ -66,8 +56,8 @@ if __name__ == '__main__':
 
     params = param_loader('./recipes/10 cm test.csv')
     params['elements_per_side'] = 100
-    
+
     grid = GreedyGrid(solver_type=lossy_handler, params=params)
-    
+
     for i in range(3):
         print(grid.power())

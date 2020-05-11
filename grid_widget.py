@@ -27,8 +27,8 @@ params = param_loader(RECIPE_FILE)
 RES = 12
 params['elements_per_side'] = RES  # TODO kill this
 crit_radius = 1e-6 + params['L'] / (RES - 1)
-# coords = grid_generator(resolution=RES, size=params['L'], type='square')
-coords = grid_generator(resolution=RES, size=params['L'], type='rand')
+coords = grid_generator(resolution=RES, size=params['L'], type='square')
+# coords = grid_generator(resolution=RES, size=params['L'], type='rand')
 mygrid = Grid(coordinates=coords,
               element_class=Element,
               crit_radius=crit_radius,
@@ -111,16 +111,18 @@ def step_grid(loop=False):
 def run_solver():
     if state.solver_process is None:
         state.solver_process = curdoc().add_periodic_callback(
-            lambda: step_grid(loop=True), 250)
+            lambda: step_grid(loop=True), 330)
         solve_button.label = 'Halt Solver'
     else:
+        # import ipdb; ipdb.set_trace()  # TODO
         stop_solver()
 
 
 def stop_solver():
-    curdoc().remove_periodic_callback(state.solver_process)
-    state.solver_process = None
-    solve_button.label = 'Solve Grid'
+    if state.solver_process is not None:
+        curdoc().remove_periodic_callback(state.solver_process)
+        state.solver_process = None
+        solve_button.label = 'Solve Grid'
 
 
 def randomize_grid():
@@ -144,6 +146,7 @@ def set_radius(attr, old, new):
     for e in mygrid.elements:
         e.target = None
     mygrid.change_radius(radius_slider.value)
+    stop_solver()
     render()
 
 

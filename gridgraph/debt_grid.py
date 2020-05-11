@@ -69,11 +69,14 @@ class DebtElement(Element):
         inputs = [e.I for e in self.donors]  # can be vectorized
         debts = [e.debt for e in self.donors]  # can also be vectorized
 
-        self.I = np.sum(inputs) + self.current_generated
+        if self.sink:
+            self.I = np.sum(inputs)
+        else:
+            self.I = np.sum(inputs) + self.current_generated
         self.debt = np.sum(debts) + self.solver.loss(self.I)
 
 
-class DiffusionGrid(Grid):
+class DebtGrid(Grid):
     '''Current- and Debt-passing grid model.'''
     def __init__(self, element_class, solver_type, params,
                  crit_radius=1, coordinates=None):
