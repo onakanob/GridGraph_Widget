@@ -36,7 +36,7 @@ class Element():
         return target[0]        # No catch if dupes exist somehow
 
     def _set_target(self, e):
-        self._G.remove_edges_from(list(self._G.out_edges(self.idx)))        
+        self._G.remove_edges_from(list(self._G.out_edges(self.idx)))
         if e is not None:
             self._G.add_edge(self.idx, e.idx)
 

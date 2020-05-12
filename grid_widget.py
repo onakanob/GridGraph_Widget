@@ -15,7 +15,7 @@ from gridgraph.utils import param_loader, grid_generator
 from bokeh.io import curdoc
 from bokeh.layouts import column
 from bokeh.models import Plot, Circle, Range1d, StaticLayoutProvider,\
-    GraphRenderer
+    GraphRenderer, MultiLine
 from bokeh.models.widgets import Button, Slider, Div
 from bokeh.events import Tap, DoubleTap
 from bokeh.transform import linear_cmap
@@ -25,14 +25,14 @@ import colorcet as cc
 from ipdb import set_trace as DF
 
 # >> Simulation Initialization << #
-RECIPE_FILE = './recipes/1 cm test.csv'
+RECIPE_FILE = './recipes/grid demo.csv'
 params = param_loader(RECIPE_FILE)
 
-RES = 6
+RES = 12
 params['elements_per_side'] = RES  # TODO kill this
 crit_radius = 1e-6 + params['L'] / (RES - 1)
-coords = grid_generator(resolution=RES, size=params['L'], type='square')
-# coords = grid_generator(resolution=RES, size=params['L'], type='rand')
+# coords = grid_generator(resolution=RES, size=params['L'], type='square')
+coords = grid_generator(resolution=RES, size=params['L'], type='rand')
 mygrid = Grid(coordinates=coords,
               element_class=Element,
               crit_radius=crit_radius,
@@ -47,6 +47,7 @@ plot.background_fill_color = (10, 10, 35)  # "midnightblue"
 plot.background_fill_alpha = 1
 
 layout = StaticLayoutProvider(graph_layout=mygrid.layout())
+# layout2 = ColumnDataSource(mygrid.layout2())
 
 # Mesh renderer
 mesh = GraphRenderer()
@@ -57,20 +58,34 @@ mesh.edge_renderer.glyph.line_dash = [2, 4]
 mesh.edge_renderer.glyph.line_color = 'silver'
 
 # Graph renderer
+# New Version
+# graph = MultiLine()
+
+
+# OLD SICKNESS: TODO kill me
 graph = GraphRenderer()
-graph.layout_provider = layout
 graph.node_renderer.visible = False
-graph.edge_renderer.glyph.line_width = 3.5
-graph.edge_renderer.glyph.line_color = 'hotpink'
+graph.layout_provider = layout
+graph.edge_renderer.glyph.line_width = 3
+graph.edge_renderer.glyph.line_color = 'pink'
+# graph.edge_renderer.glyph.line_color = linear_cmap('Is', cc.kgy, low=0,  # CET_L19
+#                                                    high=0.02)
+#                                                    # low_color='#feffff',
+#                                                    high_color='#d0210e')
 # TODO colormap based on current, width based on wire width
 
 # Node renderer
 nodes = GraphRenderer()
 nodes.layout_provider = layout
 nodes.edge_renderer.visible = False
-nodes.node_renderer.glyph = Circle(size=12, line_color='white', line_width=.5,
-    fill_color=linear_cmap('dPs', cc.kgy, low=.2,
-                           high=mygrid.params['Voc']), low_color='')
+# TODO size based on gather area
+nodes.node_renderer.glyph = Circle(size=12, line_color='white', line_width=.5)
+nodes.node_renderer.glyph.fill_color = linear_cmap('dPs', cc.kgy, low=.1,
+                                                   high=mygrid.params['Voc'],
+                                                   low_color='#001505')
+# nodes.node_renderer.glyph = Circle(size=12, line_color='white', line_width=.5,
+#     fill_color=linear_cmap('dPs', cc.kgy, low=.5, high=mygrid.params['Voc'],
+#                            low_color='#001505'))
 
 
 # TODO special markers for the sinks
@@ -81,6 +96,9 @@ plot.renderers.append(nodes)
 
 class solver_state:
     pass
+    # def __init__(self):
+    #     self.last_power = -1
+    #     self.solver_process = None
 
 
 state = solver_state()
@@ -98,8 +116,11 @@ def render(power=None):
         str(round(power * 1e3, 3)) + ' milliwatts</p>'
     layout.graph_layout = mygrid.layout()
     mesh.edge_renderer.data_source.data = mygrid.mesh()
-    graph.edge_renderer.data_source.data = mygrid.edges()
-    # graph.edge_renderer.data_source.data['I'] = []
+
+    graph_edges = mygrid.edges()
+    graph.edge_renderer.data_source.data = graph_edges
+    graph.edge_renderer.data_source.data['Is'] = [0.01 for d in
+                                                  graph_edges['start']]
     nodes.node_renderer.data_source.data['index'] = list(range(len(mygrid)))
     nodes.node_renderer.data_source.data['dPs'] = mygrid.dPs
 
@@ -169,7 +190,7 @@ solve_button = Button(label='Solve Grid')
 solve_button.on_click(run_solver)
 
 radius_slider = Slider(title="radius", value=crit_radius,
-                       start=0.0, end=0.3, step=0.01)
+                       start=0.0, end=0.13, step=0.01)
 radius_slider.on_change('value', set_radius)
 
 power_readout = Div()
