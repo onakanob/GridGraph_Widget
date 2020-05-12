@@ -20,6 +20,9 @@ from bokeh.models.widgets import Button, Slider, Div
 from bokeh.events import Tap, DoubleTap
 from bokeh.transform import linear_cmap
 
+import colorcet as cc
+
+from ipdb import set_trace as DF
 
 # >> Simulation Initialization << #
 RECIPE_FILE = './recipes/1 cm test.csv'
@@ -65,8 +68,10 @@ graph.edge_renderer.glyph.line_color = 'hotpink'
 nodes = GraphRenderer()
 nodes.layout_provider = layout
 nodes.edge_renderer.visible = False
-nodes.node_renderer.glyph = Circle(size=6, line_color='black', line_width=.5,
-                                   color=linear_cmap(''))
+nodes.node_renderer.glyph = Circle(size=12, line_color='white', line_width=.5,
+    fill_color=linear_cmap('dPs', cc.kgy, low=.2,
+                           high=mygrid.params['Voc']), low_color='')
+
 
 # TODO special markers for the sinks
 plot.renderers.append(mesh)
@@ -94,9 +99,9 @@ def render(power=None):
     layout.graph_layout = mygrid.layout()
     mesh.edge_renderer.data_source.data = mygrid.mesh()
     graph.edge_renderer.data_source.data = mygrid.edges()
-    import ipdb; ipdb.set_trace()
-    graph.edge_renderer.data_source.data['I'] = 0
+    # graph.edge_renderer.data_source.data['I'] = []
     nodes.node_renderer.data_source.data['index'] = list(range(len(mygrid)))
+    nodes.node_renderer.data_source.data['dPs'] = mygrid.dPs
 
 
 def step_grid(loop=False):
