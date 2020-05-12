@@ -12,19 +12,20 @@ from gridgraph.greedygrid import GreedyDebtElement as Element, GreedyGrid as Gri
 from gridgraph.power_handlers import lossy_handler
 from gridgraph.utils import param_loader, grid_generator
 
-from bokeh.io import curdoc, show
+from bokeh.io import curdoc
 from bokeh.layouts import column
 from bokeh.models import Plot, Circle, Range1d, StaticLayoutProvider,\
     GraphRenderer
 from bokeh.models.widgets import Button, Slider, Div
 from bokeh.events import Tap, DoubleTap
+from bokeh.transform import linear_cmap
 
 
 # >> Simulation Initialization << #
 RECIPE_FILE = './recipes/1 cm test.csv'
 params = param_loader(RECIPE_FILE)
 
-RES = 12
+RES = 6
 params['elements_per_side'] = RES  # TODO kill this
 crit_radius = 1e-6 + params['L'] / (RES - 1)
 coords = grid_generator(resolution=RES, size=params['L'], type='square')
@@ -39,8 +40,8 @@ power = mygrid.power()
 
 # >> GUI Initialization << #
 plot = Plot(x_range=Range1d(-.1, 1.1), y_range=Range1d(-.1, 1.1))
-plot.background_fill_color = "midnightblue"
-plot.background_fill_alpha = .8
+plot.background_fill_color = (10, 10, 35)  # "midnightblue"
+plot.background_fill_alpha = 1
 
 layout = StaticLayoutProvider(graph_layout=mygrid.layout())
 
@@ -48,7 +49,7 @@ layout = StaticLayoutProvider(graph_layout=mygrid.layout())
 mesh = GraphRenderer()
 mesh.layout_provider = layout
 mesh.node_renderer.visible = False
-mesh.edge_renderer.glyph.line_width = 1.5
+mesh.edge_renderer.glyph.line_width = 1
 mesh.edge_renderer.glyph.line_dash = [2, 4]
 mesh.edge_renderer.glyph.line_color = 'silver'
 
@@ -64,9 +65,10 @@ graph.edge_renderer.glyph.line_color = 'hotpink'
 nodes = GraphRenderer()
 nodes.layout_provider = layout
 nodes.edge_renderer.visible = False
-nodes.node_renderer.glyph = Circle(size=7, fill_color='lime')
-# TODO special markers for the sinks
+nodes.node_renderer.glyph = Circle(size=6, line_color='black', line_width=.5,
+                                   color=linear_cmap(''))
 
+# TODO special markers for the sinks
 plot.renderers.append(mesh)
 plot.renderers.append(graph)
 plot.renderers.append(nodes)
@@ -92,6 +94,8 @@ def render(power=None):
     layout.graph_layout = mygrid.layout()
     mesh.edge_renderer.data_source.data = mygrid.mesh()
     graph.edge_renderer.data_source.data = mygrid.edges()
+    import ipdb; ipdb.set_trace()
+    graph.edge_renderer.data_source.data['I'] = 0
     nodes.node_renderer.data_source.data['index'] = list(range(len(mygrid)))
 
 
@@ -114,7 +118,6 @@ def run_solver():
             lambda: step_grid(loop=True), 330)
         solve_button.label = 'Halt Solver'
     else:
-        # import ipdb; ipdb.set_trace()  # TODO
         stop_solver()
 
 
@@ -161,7 +164,7 @@ solve_button = Button(label='Solve Grid')
 solve_button.on_click(run_solver)
 
 radius_slider = Slider(title="radius", value=crit_radius,
-                       start=0.0, end=1.0, step=0.01)
+                       start=0.0, end=0.3, step=0.01)
 radius_slider.on_change('value', set_radius)
 
 power_readout = Div()

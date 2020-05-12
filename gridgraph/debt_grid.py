@@ -5,14 +5,14 @@ wire scaling."""
 # import logging
 # from collections import deque
 import autograd.numpy as np
-from autograd import grad
+# from autograd import grad
 
 from .dynamic_grid import Element, Grid
 
 
 class DebtElement(Element):
     def __init__(self, idx, coords, A, G, elements,
-                 Is, debts, dPs, solver, params):
+                 Is, debts, dPs, solver, params, Area):
         super().__init__(idx, coords, A, G, elements)
         self._Is = Is              # View of the global current array
         self._debts = debts        # View of the global debt array
@@ -21,14 +21,17 @@ class DebtElement(Element):
 
         self.solver = solver
 
-        self.sink = False
+        self.Area = None
+        self.current_generated = None
+        self.update_Area(Area)
 
-        self.current_generated = self.solver.I_generated()
-        if self.current_generated < 0:
-            raise ValueError('Power loss in sheet overwhelming power ' +
-                             'collected. reduce the size or increase ' +
-                             'the resolution of the simulation.')
-        self.grad_func = grad(self.solver.loss)
+        self.sink = False
+        # self.grad_func = grad(self.solver.loss)
+
+    def dist(self, e):
+        return np.sqrt(np.square(np.array(self.coords) -
+                                 np.array(e.coords)).sum())
+    
 
     def _get_I(self):
         return self._Is[self.idx]
@@ -62,18 +65,30 @@ class DebtElement(Element):
     dP = property(fget=lambda self: self._get_dP(),
                   fset=lambda self, val: self._set_dP(val))
 
+    def update_Area(self, Area):
+        '''Update Area and precompute local current generation.'''
+        self.Area = Area
+        self.current_generated = self.solver.I_generated(self.Area)
+        if self.current_generated < 0:
+            raise ValueError('Power loss in sheet overwhelming power ' +
+                             'collected. Reduce the size or increase ' +
+                             'the resolution of the simulation.')
+
     def get_w(self):
         return self.solver.w(self.I)
 
     def update_I(self):
+        '''Sum incoming current and debt and add local contributions.'''
         inputs = [e.I for e in self.donors]  # can be vectorized
         debts = [e.debt for e in self.donors]  # can also be vectorized
 
         if self.sink:
             self.I = np.sum(inputs)
+            self.debt = np.sum(debts)
         else:
             self.I = np.sum(inputs) + self.current_generated
-        self.debt = np.sum(debts) + self.solver.loss(self.I)
+            l = self.dist(self.target)
+            self.debt = np.sum(debts) + self.solver.loss(self.I, l)
 
 
 class DebtGrid(Grid):
@@ -95,12 +110,23 @@ class DebtGrid(Grid):
         self.solver = solver_type(params)
 
         super().__init__(crit_radius, element_class, coordinates)
+        # self.update_areas()     # TODO
 
         self.sinks = []
         self.sinks.append(self.elements[-1])  # TODO Temp use element 0 as sink
         self.sinks.append(self.elements[0])  # TODO Temp use element 0 as sink
         for sink in self.sinks:
             sink.sink = True
+
+    def update_areas(self):     # TODO Build Me
+        pass
+        # def PolyArea(x,y):
+        #     return 0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1)))
+        # Points = cat(points, corners)
+        # Get voronoi of all points
+        # For each point not corners, get index of the voronoi cell
+        # Get vertices of the cell
+        # point.update_Area(PolyArea(vertices))
 
     def add_element(self, idx, coords, eclass):
         """override add_element to accomodate expanded element init call."""
@@ -115,7 +141,8 @@ class DebtGrid(Grid):
                                     debts=self.debts,
                                     dPs=self.dPs,
                                     solver=self.solver,
-                                    params=self.params))
+                                    params=self.params,
+                                    Area=self.params['a']**2))  # TODO need to solve Area
         self.A.add_node(idx)
         self.G.add_node(idx)
         self.Is.append(0.0)

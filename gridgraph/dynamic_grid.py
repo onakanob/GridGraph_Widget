@@ -45,6 +45,10 @@ class Element():
     target = property(fget=lambda self: self._get_target(),
                       fset=lambda self, val: self._set_target(val))
 
+    def __repr__(self):
+        return "Element " + str(self.idx) + " at loc: " +\
+            str(np.round(self.loc, 5))
+
 
 class Grid():
     '''Handler for a collection of Elements and back-end state objs to
