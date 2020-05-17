@@ -36,7 +36,7 @@ class Element():
         return target[0]        # No catch if dupes exist somehow
 
     def _set_target(self, e):
-        self._G.remove_edges_from(list(self._G.out_edges(self.idx)))        
+        self._G.remove_edges_from(list(self._G.out_edges(self.idx)))
         if e is not None:
             self._G.add_edge(self.idx, e.idx)
 
@@ -44,6 +44,8 @@ class Element():
     donors = property(fget=lambda self: self._get_donors())
     target = property(fget=lambda self: self._get_target(),
                       fset=lambda self, val: self._set_target(val))
+    x = property(fget=lambda self: self.coords[0])
+    y = property(fget=lambda self: self.coords[1])
 
     def __repr__(self):
         return "Element " + str(self.idx) + " at loc: " +\
@@ -53,8 +55,10 @@ class Element():
 class Grid():
     '''Handler for a collection of Elements and back-end state objs to
     implement a dynamic graph.'''
-    def __init__(self, crit_radius=1, element_class=None, coordinates=None):
+    def __init__(self, crit_radius=1, element_class=None, coordinates=None,
+                 neighbor_limit=None):
         self.crit_radius = crit_radius
+        self.neighbor_limit = neighbor_limit
         self.elements = []
 
         # mesh adjacency (immutable once set)
@@ -67,9 +71,18 @@ class Grid():
             for i, coords in enumerate(coordinates):
                 self.add_element(idx=i,
                                  coords=coords,
-                                 eclass=element_class)
+                                 eclass=element_class,
+                                 init_neighbors=False)
+            self.change_radius(crit_radius)
 
-    def add_element(self, idx, coords, eclass):
+    coords = property(fget=lambda self: [e.coords for e in self.elements])
+
+    def add_element(self, idx, coords, eclass, init_neighbors=True):
+        '''Create a new element, add object and nodes to gir lists with index
+        idx, and add edges to neighboring nodes if not supressed.
+        Careful: this method may be overwritten entirely in child classes.'''
+        # TODO index handling is dangerout - the element could end up at the
+        # wrong indexed position in the self.elements array.
         if idx is None:
             idx = len(self)
         self.elements.append(eclass(idx=idx,
@@ -79,24 +92,32 @@ class Grid():
                                     elements=self.elements))
         self.A.add_node(idx)
         self.G.add_node(idx)
-        self.init_neighbors(self.elements[-1])
+        if init_neighbors:
+            self.init_neighbors(self.elements[-1])
 
     def init_neighbors(self, element):
         """Add neighbors for any other elements within radius of element. This
         will be faster using a global vectorized distance measurement -
         implement in the future. This will change the interface to receive the
         global element array and do all assignments internally."""
-        def distance(loc1, loc2):
-            '''L2 metric distance between two equi-dimensional coordinates.'''
-            return np.sqrt(np.sum(np.square(np.subtract(loc1, loc2))))
+        def distance(loc):
+            '''L2 metric distance from this element to loc.'''
+            return np.sqrt(np.sum(np.square(np.subtract(element.coords, loc))))
 
         element.clear_neighbors()  # Clean slate
-        for e in self.elements:
-            if (e.idx != element.idx) & \
-               (distance(element.coords, e.coords) <= self.crit_radius):
-                element.add_neighbor(e)
-                # TODO: add edge length attribute
+        neighbors = [e for e in self.elements
+                     if distance(e.coords) <= self.crit_radius
+                     if e.idx != element.idx]
 
+        # Impose neighbor count limits:
+        # if self.neighbor_limit and len(neighbors) > self.neighbor_limit:
+        #     sorted_idx = np.argsort([distance(e.coords) for e in neighbors])
+        #     neighbors = [neighbors[i] for i in
+        #                  sorted_idx[:self.neighbor_limit]]
+
+        [element.add_neighbor(e) for e in neighbors]
+
+    # TODO make this consider neighbors count limit
     def change_radius(self, radius):
         self.crit_radius = radius
         [e.clear_neighbors() for e in self.elements]
@@ -126,23 +147,29 @@ class Grid():
         return Q
 
     def layout(self):
+        '''Lists of x and y coordinates for graph operations.'''
         return dict(zip(list(range(len(self.elements))),
                         [e.coords for e in self.elements]))
 
-    def mesh(self):
-        '''A list of edges defined in self.A, representing node neighbors.'''
-        edges = self.A.edges()
+    def graph_data(self, subgraph):
+        '''Return start/end line segment coordinates for each active edge in
+        the targets graph in a dictionary.
+        subgraph = "grid" or "mesh"."'''
+        if subgraph == 'grid':
+            edges = self.G.edges()
+        elif subgraph == 'mesh':
+            edges = self.A.edges()
+        elif subgraph == 'nodes':
+            return dict(x=[e.x for e in self.elements],
+                        y=[e.y for e in self.elements])
+        else:
+            raise ValueError('Must specify subgraph="grid" or "mesh".')
         if not edges:
-            return {'start': [], 'end': []}
-        return dict(zip(['start', 'end'], zip(*edges)))
-
-    def edges(self):
-        '''A list of edges defined in self.G, representing node neighbors as a
-        dictionary with 'start' and 'end' keys.'''
-        edges = self.G.edges()
-        if not edges:
-            return {'start': [], 'end': []}
-        return dict(zip(['start', 'end'], zip(*edges)))
+            return {'xs': [], 'ys': []}
+        return dict(xs=[[self.elements[a].x, self.elements[b].x]
+                        for a, b in edges],
+                    ys=[[self.elements[a].y, self.elements[b].y]
+                        for a, b in edges])
 
     def __len__(self):
         return len(self.elements)

@@ -18,11 +18,19 @@ class GreedyDebtElement(DebtElement):
         if not self.sink:
             neighbors = self.neighbors
             np.random.shuffle(neighbors)
-            local_dPs = [e.dP for e in neighbors]
             local_dists = [self.dist(e) for e in neighbors]
+
+            # if limit_checks is not None:  # shorten neighbors list
+            #     if len(neighbors) > limit_checks:
+            #         sorted = np.argsort(local_dists)
+            #         neighbors = [neighbors[i] for i in sorted[:limit_checks]]
+            #         local_dists = [local_dists[i] for i in
+            #                        sorted[:limit_checks]]
+
+            local_dPs = [e.dP for e in neighbors]
             # TODO optimize this: precompute/estimate the gradient
             gradients = [self.grad_loss(l)(float(self.I) + 1e-20)
-                               for l in local_dists]
+                         for l in local_dists]
             local_dPs = [local_dPs[i] - g for i, g in enumerate(gradients)]
 
             if any(np.greater(local_dPs, 0)):
@@ -42,7 +50,6 @@ class GreedyDebtElement(DebtElement):
             self.dP = dP - self.grad_loss(l)(float(self.I) + 1e-20)
         else:
             self.dP = 0
-        
 
 
 class GreedyGrid(DebtGrid):

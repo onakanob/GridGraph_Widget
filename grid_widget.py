@@ -4,137 +4,171 @@ Left click - place a node.
 Button - solve the graph.
 Button - clear all nodes."""
 
-import time
+from math import sqrt
 
 from numpy.random import choice
 
-from gridgraph.greedygrid import GreedyDebtElement as Element, GreedyGrid as Grid
-from gridgraph.power_handlers import lossy_handler
-from gridgraph.utils import param_loader, grid_generator
-
 from bokeh.io import curdoc
-from bokeh.layouts import column
-from bokeh.models import Plot, Circle, Range1d, StaticLayoutProvider,\
-    GraphRenderer
+from bokeh.layouts import column, row
+from bokeh.models import Plot, Circle, Range1d,\
+    MultiLine, ColumnDataSource, GlyphRenderer
 from bokeh.models.widgets import Button, Slider, Div
-from bokeh.events import Tap, DoubleTap
-from bokeh.transform import linear_cmap
+from bokeh.models.transforms import LinearInterpolator
+from bokeh.events import Tap    # DoubleTap
+from bokeh.transform import transform, linear_cmap
 
 import colorcet as cc
 
-from ipdb import set_trace as DF
+from gridgraph.greedygrid import GreedyDebtElement as Element,\
+    GreedyGrid as Grid
+from gridgraph.power_handlers import lossy_handler
+from gridgraph.utils import param_loader, grid_points_generator
 
-# >> Simulation Initialization << #
-RECIPE_FILE = './recipes/1 cm test.csv'
+
+# >> Simulation Params Initialization << #
+VIEW_SIZE = 700
+CONTROL_WIDTH = 500
+WIDGET_HEIGHT = 40
+
+RECIPE_FILE = './recipes/grid demo.csv'  # Formatted CSV
 params = param_loader(RECIPE_FILE)
 
-RES = 6
-params['elements_per_side'] = RES  # TODO kill this
-crit_radius = 1e-6 + params['L'] / (RES - 1)
-coords = grid_generator(resolution=RES, size=params['L'], type='square')
-# coords = grid_generator(resolution=RES, size=params['L'], type='rand')
-mygrid = Grid(coordinates=coords,
-              element_class=Element,
-              crit_radius=crit_radius,
-              solver_type=lossy_handler,
-              params=params)
-power = mygrid.power()
+LOOP_DELAY = 300                # milliseconds to pause in loop
+NEIGHBOR_LIMIT = 6              # Max neighbors to check for target choices
 
+STARTING_GRID_TYPE = 'square'              # square rand hex
+RES_MIN = 3
+RES_MAX = 12
+INIT_RES = 7                           # elements per side or sqrt(elements)
 
-# >> GUI Initialization << #
-plot = Plot(x_range=Range1d(-.1, 1.1), y_range=Range1d(-.1, 1.1))
-plot.background_fill_color = (10, 10, 35)  # "midnightblue"
-plot.background_fill_alpha = 1
-
-layout = StaticLayoutProvider(graph_layout=mygrid.layout())
-
-# Mesh renderer
-mesh = GraphRenderer()
-mesh.layout_provider = layout
-mesh.node_renderer.visible = False
-mesh.edge_renderer.glyph.line_width = 1
-mesh.edge_renderer.glyph.line_dash = [2, 4]
-mesh.edge_renderer.glyph.line_color = 'silver'
-
-# Graph renderer
-graph = GraphRenderer()
-graph.layout_provider = layout
-graph.node_renderer.visible = False
-graph.edge_renderer.glyph.line_width = 3.5
-graph.edge_renderer.glyph.line_color = 'hotpink'
-# TODO colormap based on current, width based on wire width
-
-# Node renderer
-nodes = GraphRenderer()
-nodes.layout_provider = layout
-nodes.edge_renderer.visible = False
-nodes.node_renderer.glyph = Circle(size=12, line_color='white', line_width=.5,
-    fill_color=linear_cmap('dPs', cc.kgy, low=.2,
-                           high=mygrid.params['Voc']), low_color='')
-
-
-# TODO special markers for the sinks
-plot.renderers.append(mesh)
-plot.renderers.append(graph)
-plot.renderers.append(nodes)
+RADIUS_MAX = 0.34                                 # max allowable mesh size
+INIT_RADIUS = 1e-6 + params['L'] / (INIT_RES - 1)  # starting mesh length
 
 
 class solver_state:
+    '''Empty container class for GUI state variables'''
     pass
 
 
 state = solver_state()
 state.last_power = -1
-state.solver_process = None
+state.solver_running = False
+state.grid_type = None
+state.mygrid = None
+state.power = None
+
+
+# >> Init. Bokeh GUI elements << #
+plot = Plot(x_range=Range1d(-.1, 1.1), y_range=Range1d(-.1, 1.1),
+            width=VIEW_SIZE, aspect_ratio=1)
+plot.background_fill_color = (10, 10, 35)  # "midnightblue"
+plot.background_fill_alpha = 1.0
+
+
+# Mesh renderer
+mesh_source = ColumnDataSource()
+mesh_glyph = MultiLine(xs='xs', ys='ys', line_width=0.7, line_dash=[2, 4],
+                       line_color='silver')
+mesh = GlyphRenderer(data_source=mesh_source, glyph=mesh_glyph)
+
+# Graph renderer
+grid_source = ColumnDataSource()  # Initialize actual data in render()
+grid_glyph = MultiLine(xs='xs', ys='ys')
+grid_glyph.line_width = transform('ws', LinearInterpolator(clip=False,
+                                                           x=[0, 0.15],
+                                                           y=[1, 15]))
+grid_glyph.line_color = linear_cmap('Is', cc.CET_L19,
+                                    low=0,
+                                    high=0.010,
+                                    low_color='#feffff',
+                                    high_color='#d0210e')
+grid = GlyphRenderer(data_source=grid_source, glyph=grid_glyph)
+
+# Node renderer
+node_source = ColumnDataSource()
+node_glyph = Circle(x='x', y='y', line_color='white', line_width=.5)
+# node_glyph.size = 12            # TODO scale w/ cell area
+node_glyph.size = transform('areas', LinearInterpolator(clip=False,
+                                                        x=[0, 0.4],
+                                                        y=[7, 50]))
+node_glyph.fill_color = linear_cmap('dPs', cc.kgy, low=.1,
+                                    high=params['Voc'],
+                                    low_color='#001505')
+nodes = GlyphRenderer(data_source=node_source, glyph=node_glyph)
+# TODO special markers for the sinks
+
+plot.renderers.append(mesh)
+plot.renderers.append(grid)
+plot.renderers.append(nodes)
 
 
 # >> Callback Functions << #
 def render(power=None):
     '''Re-render pass: reassign model space data to screen space objects.'''
     if power is None:
-        power = mygrid.power()
+        state.power = state.mygrid.power()
 
     power_readout.text = '<p style="font-size:24px"> Power Output: ' +\
-        str(round(power * 1e3, 3)) + ' milliwatts</p>'
-    layout.graph_layout = mygrid.layout()
-    mesh.edge_renderer.data_source.data = mygrid.mesh()
-    graph.edge_renderer.data_source.data = mygrid.edges()
-    # graph.edge_renderer.data_source.data['I'] = []
-    nodes.node_renderer.data_source.data['index'] = list(range(len(mygrid)))
-    nodes.node_renderer.data_source.data['dPs'] = mygrid.dPs
+        str(round(state.power * 1e3, 3)) + ' milliwatts</p>'
+
+    node_source.data = state.mygrid.graph_data('nodes')
+    node_source.data['areas'] = [sqrt(a) for a in node_source.data['areas']]
+    mesh_source.data = state.mygrid.graph_data('mesh')
+    grid_source.data = state.mygrid.graph_data('grid')
 
 
-def step_grid(loop=False):
-    '''Alternate graph update steps with rendering until the solution
-    converges.'''
-    power = mygrid.power_and_update()
-    render(power)
-    if loop:
-        if state.last_power == power:
+def generate_grid(resolution, crit_radius, grid_type=None):
+    '''Initialize a new node layout and grid object.'''
+    stop_solver()
+    if grid_type is not None:
+        state.grid_type = grid_type
+    coords = grid_points_generator(resolution=resolution, size=params['L'],
+                                   type=state.grid_type)
+    state.mygrid = Grid(coordinates=coords,
+                        element_class=Element,
+                        crit_radius=crit_radius,
+                        solver_type=lossy_handler,
+                        params=params,
+                        neighbor_limit=NEIGHBOR_LIMIT)
+    state.power = state.mygrid.power()
+    # print(sum(state.mygrid.areas))
+    # print(state.mygrid.coords)
+    # print('<min max>: <', min(state.mygrid.areas),
+    #       max(state.mygrid.areas), '>')
+    render()
+
+
+def step_grid():
+    '''Update grpah once and render. If global state wants to keep the solver
+    running, queue self on a timeout. If the model stopped changing, halt the
+    solver loop.'''
+    state.power = state.mygrid.power_and_update()
+    render(state.power)
+    if state.solver_running:
+        if state.last_power == state.power:
             stop_solver()
             state.last_power = -1
         else:
-            state.last_power = power
+            state.last_power = state.power
+            curdoc().add_timeout_callback(step_grid, LOOP_DELAY)
 
 
-def run_solver():
-    if state.solver_process is None:
-        state.solver_process = curdoc().add_periodic_callback(
-            lambda: step_grid(loop=True), 330)
-        solve_button.label = 'Halt Solver'
-    else:
+def toggle_solver():
+    if state.solver_running:
         stop_solver()
+    else:
+        state.solver_running = True
+        solve_button.label = 'Halt Solver'
+        step_grid()
 
 
 def stop_solver():
-    if state.solver_process is not None:
-        curdoc().remove_periodic_callback(state.solver_process)
-        state.solver_process = None
-        solve_button.label = 'Solve Grid'
+    state.solver_running = False
+    solve_button.label = 'Solve Grid'
 
 
-def randomize_grid():
-    for e in mygrid.elements:
+def randomize_wires():
+    for e in state.mygrid.elements:
         if e.neighbors:
             e.target = choice(e.neighbors)
         else:
@@ -143,45 +177,87 @@ def randomize_grid():
 
 
 def add_point(event):
-    coords = [event.x, event.y]
-    mygrid.add_element(idx=None,
-                       coords=coords,
-                       eclass=Element)
-    render()
+    def adder():
+        state.mygrid.add_element(idx=None,
+                                 coords=[event.x, event.y],
+                                 eclass=Element)
+        render()
+    curdoc().add_next_tick_callback(adder)
 
 
 def set_radius(attr, old, new):
-    for e in mygrid.elements:
+    for e in state.mygrid.elements:
         e.target = None
-    mygrid.change_radius(radius_slider.value)
+    state.mygrid.change_radius(radius_slider.value)
     stop_solver()
     render()
 
 
 # >> Define Widgets << #
-rand_button = Button(label='Randomize Grid')
-rand_button.on_click(randomize_grid)
+square_button = Button(label='Square Mesh', sizing_mode = "scale_width", height=WIDGET_HEIGHT)
+square_button.on_click(lambda: generate_grid(resolution=res_slider.value,
+                                             crit_radius=radius_slider.value,
+                                             grid_type='square'))
 
-step_button = Button(label='Step Grid')
+hex_button = Button(label='Triangle Mesh', sizing_mode = "scale_width", height=WIDGET_HEIGHT)
+hex_button.on_click(lambda: generate_grid(resolution=res_slider.value,
+                                          crit_radius=radius_slider.value,
+                                          grid_type='triangle'))
+
+rand_mesh_button = Button(label='Random Mesh', sizing_mode="scale_width",
+                          height=WIDGET_HEIGHT)
+rand_mesh_button.on_click(lambda: generate_grid(resolution=res_slider.value,
+                                                crit_radius=radius_slider.value,
+                                                grid_type='scatter'))
+
+rand_button = Button(label='Randomize Wires', sizing_mode="scale_width",
+                     height=WIDGET_HEIGHT)
+rand_button.on_click(randomize_wires)
+
+step_button = Button(label='Step Grid', sizing_mode="scale_width",
+                     height=WIDGET_HEIGHT)
 step_button.on_click(step_grid)
 
-solve_button = Button(label='Solve Grid')
-solve_button.on_click(run_solver)
+solve_button = Button(label='Solve Grid', sizing_mode="scale_width",
+                      height=WIDGET_HEIGHT)
+solve_button.on_click(toggle_solver)
 
-radius_slider = Slider(title="radius", value=crit_radius,
-                       start=0.0, end=0.3, step=0.01)
+res_slider = Slider(title="Mesh Resolution", value=INIT_RES,
+                    start=RES_MIN, end=RES_MAX, step=1,
+                    sizing_mode="scale_width", height=WIDGET_HEIGHT)
+res_slider.on_change('value', lambda attr, old, new:
+                     generate_grid(resolution=res_slider.value,
+                                   crit_radius=radius_slider.value))
+
+radius_slider = Slider(title="Longest Wire [centimeters]", value=INIT_RADIUS,
+                       start=0.0, end=RADIUS_MAX, step=0.01,
+                       sizing_mode="scale_width", height=WIDGET_HEIGHT)
 radius_slider.on_change('value', set_radius)
 
-power_readout = Div()
+title_card = Div(text='<p style="font-size:20px"> ' +\
+                 'Optimize a 1-cm solar cell grid: </p>',
+                 sizing_mode="scale_width", height=WIDGET_HEIGHT)
+power_readout = Div(sizing_mode="scale_width", height=WIDGET_HEIGHT)
 
-plot.on_event(Tap, add_point)   # Why is this so slow?
+plot.on_event(Tap, add_point)   # Why callback so slow? <shakes fist at Bokeh>
 # plot.on_event(DoubleTap, add_sink)  # TODO
 
-render()
-final_form = column(rand_button,
-                    radius_slider,
-                    plot,
-                    step_button,
-                    solve_button,
+init_buttons = row(square_button, hex_button, rand_mesh_button)
+controls = column(title_card,
+                  init_buttons,
+                  res_slider,
+                  radius_slider,
+                  rand_button,
+                  step_button,
+                  solve_button,
+                  width=CONTROL_WIDTH)
+view_panel = column(plot,
                     power_readout)
+final_form = row(controls, view_panel)
+
+
+# Instate a grid and push all to the server
+generate_grid(resolution=res_slider.value,
+              crit_radius=radius_slider.value,
+              grid_type=STARTING_GRID_TYPE)
 curdoc().add_root(final_form)
