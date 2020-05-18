@@ -162,6 +162,12 @@ class Grid():
         elif subgraph == 'nodes':
             return dict(x=[e.x for e in self.elements],
                         y=[e.y for e in self.elements])
+        elif subgraph == 'generators':
+            return dict(x=[e.x for e in self.elements if not e.sink],
+                        y=[e.y for e in self.elements if not e.sink])
+        elif subgraph == 'sinks':
+            return dict(x=[e.x for e in self.sinks],
+                        y=[e.y for e in self.sinks])
         else:
             raise ValueError('Must specify subgraph="grid" or "mesh".')
         if not edges:

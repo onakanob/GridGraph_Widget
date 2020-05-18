@@ -6,15 +6,15 @@ Button - clear all nodes."""
 
 from math import sqrt
 
-from numpy.random import choice
+import numpy as np
 
 from bokeh.io import curdoc
 from bokeh.layouts import column, row
-from bokeh.models import Plot, Circle, Range1d,\
+from bokeh.models import Plot, Circle, InvertedTriangle, Range1d,\
     MultiLine, ColumnDataSource, GlyphRenderer
 from bokeh.models.widgets import Button, Slider, Div
 from bokeh.models.transforms import LinearInterpolator
-from bokeh.events import Tap    # DoubleTap
+from bokeh.events import Tap, DoubleTap
 from bokeh.transform import transform, linear_cmap
 
 import colorcet as cc
@@ -79,27 +79,34 @@ grid_glyph.line_width = transform('ws', LinearInterpolator(clip=False,
                                                            y=[1, 15]))
 grid_glyph.line_color = linear_cmap('Is', cc.CET_L19,
                                     low=0,
-                                    high=0.010,
+                                    high=0.008,
                                     low_color='#feffff',
                                     high_color='#d0210e')
 grid = GlyphRenderer(data_source=grid_source, glyph=grid_glyph)
 
+# Interpolator objects for node and sink glyphs
+area_interpolator = transform('areas',
+                        LinearInterpolator(clip=False, x=[0, 0.4], y=[7, 50]))
+dP_colormap = linear_cmap('dPs', cc.kgy, low=.2, high=params['Voc'],
+                          low_color='#001505')
+
 # Node renderer
 node_source = ColumnDataSource()
-node_glyph = Circle(x='x', y='y', line_color='white', line_width=.5)
-# node_glyph.size = 12            # TODO scale w/ cell area
-node_glyph.size = transform('areas', LinearInterpolator(clip=False,
-                                                        x=[0, 0.4],
-                                                        y=[7, 50]))
-node_glyph.fill_color = linear_cmap('dPs', cc.kgy, low=.1,
-                                    high=params['Voc'],
-                                    low_color='#001505')
+node_glyph = Circle(x='x', y='y', line_color='white', line_width=0.5,
+                    size=area_interpolator, fill_color=dP_colormap)
 nodes = GlyphRenderer(data_source=node_source, glyph=node_glyph)
 # TODO special markers for the sinks
+
+# Sink renderer
+sink_source = ColumnDataSource()
+sink_glyph = InvertedTriangle(x='x', y='y', line_color='white', line_width=1.0,
+                              size=area_interpolator, fill_color=dP_colormap)
+sinks = GlyphRenderer(data_source=sink_source, glyph=sink_glyph)
 
 plot.renderers.append(mesh)
 plot.renderers.append(grid)
 plot.renderers.append(nodes)
+plot.renderers.append(sinks)
 
 
 # >> Callback Functions << #
@@ -111,8 +118,10 @@ def render(power=None):
     power_readout.text = '<p style="font-size:24px"> Power Output: ' +\
         str(round(state.power * 1e3, 3)) + ' milliwatts</p>'
 
-    node_source.data = state.mygrid.graph_data('nodes')
+    node_source.data = state.mygrid.graph_data('generators')
     node_source.data['areas'] = [sqrt(a) for a in node_source.data['areas']]
+    sink_source.data = state.mygrid.graph_data('sinks')
+    sink_source.data['areas'] = [1.8 * sqrt(a) for a in sink_source.data['areas']]
     mesh_source.data = state.mygrid.graph_data('mesh')
     grid_source.data = state.mygrid.graph_data('grid')
 
@@ -131,8 +140,6 @@ def generate_grid(resolution, crit_radius, grid_type=None):
                         params=params,
                         neighbor_limit=NEIGHBOR_LIMIT)
     state.power = state.mygrid.power()
-    # print(sum(state.mygrid.areas))
-    # print(state.mygrid.coords)
     # print('<min max>: <', min(state.mygrid.areas),
     #       max(state.mygrid.areas), '>')
     render()
@@ -170,17 +177,21 @@ def stop_solver():
 def randomize_wires():
     for e in state.mygrid.elements:
         if e.neighbors:
-            e.target = choice(e.neighbors)
+            e.target = np.random.choice(e.neighbors)
         else:
             e.target = None
+    state.power = state.mygrid.power()
     render()
 
 
-def add_point(event):
+def add_point(event, sink=False):
     def adder():
+        coords=np.maximum([event.x, event.y], 1e-6)
+        coords=np.minimum(coords, params['L'] - 1e-6)
         state.mygrid.add_element(idx=None,
-                                 coords=[event.x, event.y],
-                                 eclass=Element)
+                                 coords=coords,
+                                 eclass=Element,
+                                 sink=sink)
         render()
     curdoc().add_next_tick_callback(adder)
 
@@ -239,8 +250,9 @@ title_card = Div(text='<p style="font-size:20px"> ' +\
                  sizing_mode="scale_width", height=WIDGET_HEIGHT)
 power_readout = Div(sizing_mode="scale_width", height=WIDGET_HEIGHT)
 
-plot.on_event(Tap, add_point)   # Why callback so slow? <shakes fist at Bokeh>
-# plot.on_event(DoubleTap, add_sink)  # TODO
+# Why callback so slow? <shakes fist at Bokeh>
+plot.on_event(Tap, add_point)
+plot.on_event(DoubleTap, lambda event: add_point(event, sink=True))
 
 init_buttons = row(square_button, hex_button, rand_mesh_button)
 controls = column(title_card,

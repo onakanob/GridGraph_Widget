@@ -17,14 +17,17 @@ def bounded_voronoi_vertices(points, bounding_box, show_plot=False):
     points: list of tuples (x, y)
     bounding_box: [xmin, xmax, ymin, ymax]'''
     def box_reflections(points, bounding_box):
-        '''Augment points by reflecting over the bounding box edges. 
+        '''Augment points by reflecting over the bounding box edges.
         Code by Flabetvibes at https://tinyurl.com/y3lwr6k4 (StackOverflow)'''
         points_left = np.copy(points)
-        points_left[:, 0] = bounding_box[0] - (points_left[:, 0] - bounding_box[0])
+        points_left[:, 0] = bounding_box[0] - (points_left[:, 0] -
+                                               bounding_box[0])
         points_right = np.copy(points)
-        points_right[:, 0] = bounding_box[1] + (bounding_box[1] - points_right[:, 0])
+        points_right[:, 0] = bounding_box[1] + (bounding_box[1] -
+                                                points_right[:, 0])
         points_down = np.copy(points)
-        points_down[:, 1] = bounding_box[2] - (points_down[:, 1] - bounding_box[2])
+        points_down[:, 1] = bounding_box[2] - (points_down[:, 1] -
+                                               bounding_box[2])
         points_up = np.copy(points)
         points_up[:, 1] = bounding_box[3] + (bounding_box[3] - points_up[:, 1])
         return np.append(points,
@@ -36,9 +39,9 @@ def bounded_voronoi_vertices(points, bounding_box, show_plot=False):
                                              axis=0),
                                    axis=0),
                          axis=0)
-    
+
     count = len(points)  # Original number of points
-    points = box_reflections(np.array(points), bounding_box)  # with reflections
+    points = box_reflections(np.array(points), bounding_box)
     vor = Voronoi(points)
     if show_plot:
         voronoi_plot_2d(vor)
@@ -67,7 +70,8 @@ def grid_points_generator(resolution, size=1, type='square'):
     '''return an array of tuple pairs of coordinates.
     type: one of square, rand, scatter, triangle, or hex'''
     if type == 'square':
-        locs = np.linspace(0, size, resolution)
+        locs = np.linspace(0, size * (resolution - 1) / resolution,
+                           resolution) + (size / (2 * resolution))
         grid = []
         for y in locs:
             for x in locs:

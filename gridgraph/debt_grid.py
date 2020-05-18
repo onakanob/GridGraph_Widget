@@ -26,6 +26,7 @@ class DebtElement(Element):
         self.current_generated = None
 
         self.sink = False
+        self.sink_cost = 0.0005  # Contact power loss [W]
         # self.grad_func = grad(self.solver.loss)
 
     def dist(self, e):
@@ -84,7 +85,7 @@ class DebtElement(Element):
 
         if self.sink:
             self.I = np.sum(inputs)
-            self.debt = np.sum(debts)
+            self.debt = np.sum(debts) + self.sink_cost
         else:
             self.I = np.sum(inputs) + self.current_generated
             l = self.dist(self.target)
@@ -108,8 +109,8 @@ class DebtGrid(Grid):
         self.update_areas()
 
         self.sinks = []
-        self.sinks.append(self.elements[-1])  # TODO Temp use element 0 as sink
-        self.sinks.append(self.elements[0])  # TODO Temp use element 0 as sink
+        # self.sinks.append(self.elements[-1])  # TODO Temp use element 0 as sink
+        self.sinks.append(np.random.choice(self.elements))  # TODO Temp use element 0 as sink
         for sink in self.sinks:
             sink.sink = True
 
@@ -120,7 +121,7 @@ class DebtGrid(Grid):
                                                     0, self.params['L']])
         [e.update_Area(areas[i]) for i, e in enumerate(self.elements)]
 
-    def add_element(self, idx, coords, eclass, init_neighbors=True):
+    def add_element(self, idx, coords, eclass, init_neighbors=True, sink=False):
         """override add_element to accomodate expanded element init call."""
         if idx is None:
             idx = len(self)
@@ -134,7 +135,9 @@ class DebtGrid(Grid):
                                     dPs=self.dPs,
                                     solver=self.solver,
                                     params=self.params))
-                                    # Area=self.params['a']**2))  # TODO need to solve Area
+        if sink:
+            self.elements[idx].sink = True
+            self.sinks.append(self.elements[idx])
         self.A.add_node(idx)
         self.G.add_node(idx)
         self.Is.append(0.0)
@@ -156,7 +159,7 @@ class DebtGrid(Grid):
     def graph_data(self, subgraph):
         '''Return start/end line segment coordinates for each active edge in
         the grid or mesh. If grid, also return local currents Is and widths ws.
-        subgraph = "grid" or "mesh" or "nodes"."'''
+        subgraph = grid, mesh, nodes, generators, or sinks.'''
         data = super().graph_data(subgraph)
         if subgraph == 'grid':
             edges = self.G.edges()
@@ -169,6 +172,16 @@ class DebtGrid(Grid):
             return {**data,
                     'dPs': self.dPs,
                     'areas': self.areas}
+        elif subgraph == 'generators':
+            return {**data,
+                    'dPs': [dP for i, dP in enumerate(self.dPs) if not
+                            self.elements[i].sink],
+                    'areas': [A for i, A in enumerate(self.areas) if not
+                              self.elements[i].sink]}
+        elif subgraph == 'sinks':
+            return {**data,
+                    'dPs': [s.dP for s in self.sinks],
+                    'areas': [s.Area for s in self.sinks]}
         return data
 
     def __repr__(self):
