@@ -36,7 +36,7 @@ params = param_loader(RECIPE_FILE)
 LOOP_DELAY = 300                # milliseconds to pause in loop
 NEIGHBOR_LIMIT = 6              # Max neighbors to check for target choices
 
-STARTING_GRID_TYPE = 'rand'              # square rand hex
+STARTING_GRID_TYPE = 'rand'     # square rand hex
 STARTING_SINKS = 1
 params['rand_sinks'] = STARTING_SINKS
 RES_MIN = 3
@@ -63,7 +63,7 @@ state.power = None
 # >> Init. Bokeh GUI elements << #
 plot = Plot(x_range=Range1d(-.1, 1.1), y_range=Range1d(-.1, 1.1),
             width=VIEW_SIZE, aspect_ratio=1)
-plot.background_fill_color = (10, 10, 35)  # "midnightblue"
+plot.background_fill_color = (10, 10, 35)  # "midnightblue"-esque
 plot.background_fill_alpha = 1.0
 
 # Cell renderer #
@@ -90,6 +90,7 @@ grid_glyph.line_color = linear_cmap('Is', cc.CET_L19,
                                     high=0.008,
                                     low_color='#feffff',
                                     high_color='#d0210e')
+# grid_glyph.line_color = (223, 164, 124)  # Copper shade
 grid = GlyphRenderer(data_source=grid_source, glyph=grid_glyph)
 
 # Interpolator objects for node and sink glyphs
