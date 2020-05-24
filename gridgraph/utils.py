@@ -49,8 +49,6 @@ def bounded_voronoi_vertices(points, bounding_box, show_plot=False):
     my_regions = vor.point_region[:count]
     region_vertex_idx = [vor.regions[r] for r in my_regions]
     return [vor.vertices[v] for v in region_vertex_idx]
-    # areas = [PolyArea(points) for points in vx_coords]
-    # return areas
 
 
 def bounded_voronoi_areas(points, bounding_box, show_plot=False):
@@ -89,6 +87,14 @@ def grid_points_generator(resolution, size=1, type='square'):
         raise ValueError('Triangle grid is not implemented.')
     elif type == 'hex':
         raise ValueError('Hex grid is not implemented.')
+    elif type == 'vias':
+        '''Cheater! Return hardcode location estimates of positive vias.'''
+        SIZE = 2000             # Rough cell size in px
+        horz_locs = [n/SIZE for n in [185, 511, 837, 1163, 1489, 1815]]
+        vert_locs = [n/SIZE for n in [286, 762, 1238, 1714]]
+        points = []
+        [[points.append((x, y)) for y in vert_locs] for x in horz_locs]
+        return points
     else:
         raise ValueError('Grid type ' + str(type) +
                          ' is not valid.')

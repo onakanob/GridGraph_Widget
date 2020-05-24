@@ -36,7 +36,9 @@ params = param_loader(RECIPE_FILE)
 LOOP_DELAY = 300                # milliseconds to pause in loop
 NEIGHBOR_LIMIT = 6              # Max neighbors to check for target choices
 
-STARTING_GRID_TYPE = 'square'              # square rand hex
+STARTING_GRID_TYPE = 'rand'              # square rand hex
+STARTING_SINKS = 1
+params['rand_sinks'] = STARTING_SINKS
 RES_MIN = 3
 RES_MAX = 12
 INIT_RES = 7                           # elements per side or sqrt(elements)
@@ -64,14 +66,20 @@ plot = Plot(x_range=Range1d(-.1, 1.1), y_range=Range1d(-.1, 1.1),
 plot.background_fill_color = (10, 10, 35)  # "midnightblue"
 plot.background_fill_alpha = 1.0
 
+# Cell renderer #
+cell_source = ColumnDataSource(dict(xs=[[0, 1], [0, 1], [0, 0], [1, 1]],
+                                    ys=[[0, 0], [1, 1], [0, 1], [0, 1]]))
+cell_glyph = MultiLine(xs='xs', ys='ys', line_width=1, line_color='silver')
+cell = GlyphRenderer(data_source=cell_source, glyph=cell_glyph)
 
-# Mesh renderer
+
+# Mesh renderer #
 mesh_source = ColumnDataSource()
 mesh_glyph = MultiLine(xs='xs', ys='ys', line_width=0.7, line_dash=[2, 4],
                        line_color='silver')
 mesh = GlyphRenderer(data_source=mesh_source, glyph=mesh_glyph)
 
-# Graph renderer
+# Graph renderer #
 grid_source = ColumnDataSource()  # Initialize actual data in render()
 grid_glyph = MultiLine(xs='xs', ys='ys')
 grid_glyph.line_width = transform('ws', LinearInterpolator(clip=False,
@@ -90,19 +98,19 @@ area_interpolator = transform('areas',
 dP_colormap = linear_cmap('dPs', cc.kgy, low=.2, high=params['Voc'],
                           low_color='#001505')
 
-# Node renderer
+# Node renderer #
 node_source = ColumnDataSource()
 node_glyph = Circle(x='x', y='y', line_color='white', line_width=0.5,
                     size=area_interpolator, fill_color=dP_colormap)
 nodes = GlyphRenderer(data_source=node_source, glyph=node_glyph)
-# TODO special markers for the sinks
 
-# Sink renderer
+# Sink renderer #
 sink_source = ColumnDataSource()
 sink_glyph = InvertedTriangle(x='x', y='y', line_color='white', line_width=1.0,
                               size=area_interpolator, fill_color=dP_colormap)
 sinks = GlyphRenderer(data_source=sink_source, glyph=sink_glyph)
 
+plot.renderers.append(cell)
 plot.renderers.append(mesh)
 plot.renderers.append(grid)
 plot.renderers.append(nodes)

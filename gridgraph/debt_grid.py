@@ -108,9 +108,11 @@ class DebtGrid(Grid):
                          neighbor_limit)
         self.update_areas()
 
-        self.sinks = []
-        # self.sinks.append(self.elements[-1])  # TODO Temp use element 0 as sink
-        self.sinks.append(np.random.choice(self.elements))  # TODO Temp use element 0 as sink
+        # self.sinks = []
+        # self.sinks.append(self.elements[-1])  # element 0 as sink
+        self.sinks = np.random.choice(self.elements,
+                                      size=params['rand_sinks'],
+                                      replace=False).tolist()
         for sink in self.sinks:
             sink.sink = True
 
