@@ -86,12 +86,35 @@ def grid_points_generator(resolution, size=1, type='square'):
     elif type == 'triangle':
         raise ValueError('Triangle grid is not implemented.')
     elif type == 'hex':
-        raise ValueError('Hex grid is not implemented.')
+        '''Generate an array of close-packed points.'''
+        rounder = np.ceil  # function for rounding to an integer point count
+        # basic unit x = 1/2 distance between nodes
+        x = size * np.sqrt(1 / (2 * np.sqrt(3) * (resolution ** 2)))
+        # first set of x coordinates
+        evens_count = rounder((size - x / 2) / (2 * x)).astype(int)
+        evens = [(x / 2 + 2 * i * x) for i in range(evens_count)]
+        # second set of x coordinates
+        odds_count = rounder((size - 3 * x / 2) / (2 * x)).astype(int)
+        odds = [(3 * x / 2 + 2 * i * x) for i in range(odds_count)]
+        # y coordinates
+        row_count = rounder((size - np.sqrt(3) * x / 2) / (np.sqrt(3) * x)).astype(int)
+        rows = [np.sqrt(3) * x / 2 + i * np.sqrt(3) * x for i in range(row_count)]
+
+        points = []
+        for i, y in enumerate(rows):
+            if i % 2:           # append an odd row
+                [points.append((x, y)) for x in odds]
+            else:               # append an even row
+                [points.append((x, y)) for x in evens]
+        points = np.array(points)
+        # center the points in the plane, then return
+        points = points + ([size / 2, size / 2] - points.mean(0))
+        return [(x, y) for x, y in points]  # Ugly
     elif type == 'vias':
         '''Cheater! Return hardcode location estimates of positive vias.'''
         SIZE = 2000             # Rough cell size in px
-        horz_locs = [n/SIZE for n in [185, 511, 837, 1163, 1489, 1815]]
-        vert_locs = [n/SIZE for n in [286, 762, 1238, 1714]]
+        horz_locs = [n / SIZE for n in [185, 511, 837, 1163, 1489, 1815]]
+        vert_locs = [n / SIZE for n in [286, 762, 1238, 1714]]
         points = []
         [[points.append((x, y)) for y in vert_locs] for x in horz_locs]
         return points

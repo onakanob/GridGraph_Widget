@@ -11,7 +11,7 @@ import numpy as np
 from bokeh.io import curdoc
 from bokeh.layouts import column, row
 from bokeh.models import Plot, Circle, InvertedTriangle, Range1d,\
-    MultiLine, ColumnDataSource, GlyphRenderer
+    MultiLine, ColumnDataSource, GlyphRenderer, ColorBar
 from bokeh.models.widgets import Button, Slider, Div
 from bokeh.models.transforms import LinearInterpolator
 from bokeh.events import Tap, DoubleTap
@@ -29,6 +29,7 @@ from gridgraph.utils import param_loader, grid_points_generator
 VIEW_SIZE = 700
 CONTROL_WIDTH = 500
 WIDGET_HEIGHT = 40
+COLORBAR_WIDTH = 30
 
 RECIPE_FILE = './recipes/grid demo.csv'  # Formatted CSV
 params = param_loader(RECIPE_FILE)
@@ -36,7 +37,7 @@ params = param_loader(RECIPE_FILE)
 LOOP_DELAY = 300                # milliseconds to pause in loop
 NEIGHBOR_LIMIT = 6              # Max neighbors to check for target choices
 
-STARTING_GRID_TYPE = 'rand'     # square rand hex
+STARTING_GRID_TYPE = 'scatter'     # square rand hex scatter vias
 STARTING_SINKS = 1
 params['rand_sinks'] = STARTING_SINKS
 RES_MIN = 3
@@ -45,6 +46,8 @@ INIT_RES = 7                           # elements per side or sqrt(elements)
 
 RADIUS_MAX = 0.34                                 # max allowable mesh size
 INIT_RADIUS = 1e-6 + params['L'] / (INIT_RES - 1)  # starting mesh length
+
+FILL_COLOR = (10, 10, 35)
 
 
 class solver_state:
@@ -62,8 +65,9 @@ state.power = None
 
 # >> Init. Bokeh GUI elements << #
 plot = Plot(x_range=Range1d(-.1, 1.1), y_range=Range1d(-.1, 1.1),
-            width=VIEW_SIZE, aspect_ratio=1)
-plot.background_fill_color = (10, 10, 35)  # "midnightblue"-esque
+            height=VIEW_SIZE + 3 * COLORBAR_WIDTH,
+            width=VIEW_SIZE,
+            background_fill_color=FILL_COLOR)
 plot.background_fill_alpha = 1.0
 
 # Cell renderer #
@@ -79,19 +83,22 @@ mesh_glyph = MultiLine(xs='xs', ys='ys', line_width=0.7, line_dash=[2, 4],
                        line_color='silver')
 mesh = GlyphRenderer(data_source=mesh_source, glyph=mesh_glyph)
 
-# Graph renderer #
+
+# Grid renderer #
+grid_colormap = linear_cmap('Is', cc.CET_L19,
+                            low=0,
+                            high=8.0,
+                            low_color='#feffff',
+                            high_color='#d0210e')
 grid_source = ColumnDataSource()  # Initialize actual data in render()
 grid_glyph = MultiLine(xs='xs', ys='ys')
 grid_glyph.line_width = transform('ws', LinearInterpolator(clip=False,
                                                            x=[0, 0.15],
                                                            y=[1, 15]))
-grid_glyph.line_color = linear_cmap('Is', cc.CET_L19,
-                                    low=0,
-                                    high=0.008,
-                                    low_color='#feffff',
-                                    high_color='#d0210e')
+grid_glyph.line_color = grid_colormap
 # grid_glyph.line_color = (223, 164, 124)  # Copper shade
 grid = GlyphRenderer(data_source=grid_source, glyph=grid_glyph)
+
 
 # Interpolator objects for node and sink glyphs
 area_interpolator = transform('areas',
@@ -118,14 +125,36 @@ plot.renderers.append(nodes)
 plot.renderers.append(sinks)
 
 
+# >> Legend Objects << #
+colorbar_theme = dict(location=(0,0),
+                      label_standoff=-8,
+                      height=COLORBAR_WIDTH,
+                      orientation='horizontal',
+                      padding=3,
+                      major_label_text_color='black',
+                      major_label_text_font_size='16px',
+                      title_text_align='left',
+                      title_text_font_size='18px',
+                      title_text_baseline='ideographic')
+grid_colorbar = ColorBar(color_mapper=grid_colormap['transform'],
+                         title='Grid Current [milliamps]',
+                         **colorbar_theme)
+node_colorbar = ColorBar(color_mapper=dP_colormap['transform'],
+                         title='Differential Power [watts/amp]',
+                         **colorbar_theme)
+
+plot.add_layout(grid_colorbar, 'below')
+plot.add_layout(node_colorbar, 'below')
+
+
 # >> Callback Functions << #
 def render(power=None):
     '''Re-render pass: reassign model space data to screen space objects.'''
     if power is None:
         state.power = state.mygrid.power()
 
-    power_readout.text = '<p style="font-size:24px"> Power Output: ' +\
-        str(round(state.power * 1e3, 3)) + ' milliwatts</p>'
+    power_readout.text = '<p style="font-size:24px"> 1 cm solar cell power output:\n' +\
+        str(max(0, round(state.power * 1e3, 3))) + ' milliwatts</p>'
 
     node_source.data = state.mygrid.graph_data('generators')
     node_source.data['areas'] = [sqrt(a) for a in node_source.data['areas']]
@@ -219,10 +248,10 @@ square_button.on_click(lambda: generate_grid(resolution=res_slider.value,
                                              crit_radius=radius_slider.value,
                                              grid_type='square'))
 
-hex_button = Button(label='Triangle Mesh', sizing_mode = "scale_width", height=WIDGET_HEIGHT)
+hex_button = Button(label='Hex Mesh', sizing_mode = "scale_width", height=WIDGET_HEIGHT)
 hex_button.on_click(lambda: generate_grid(resolution=res_slider.value,
                                           crit_radius=radius_slider.value,
-                                          grid_type='triangle'))
+                                          grid_type='hex'))
 
 rand_mesh_button = Button(label='Random Mesh', sizing_mode="scale_width",
                           height=WIDGET_HEIGHT)
@@ -254,9 +283,9 @@ radius_slider = Slider(title="Longest Wire [centimeters]", value=INIT_RADIUS,
                        sizing_mode="scale_width", height=WIDGET_HEIGHT)
 radius_slider.on_change('value', set_radius)
 
-title_card = Div(text='<p style="font-size:20px"> ' +\
-                 'Optimize a 1-cm solar cell grid: </p>',
-                 sizing_mode="scale_width", height=WIDGET_HEIGHT)
+# title_card = Div(text='<p style="font-size:20px"> ' +\
+#                  '1 cm solar cell power output: </p>',
+#                  sizing_mode="scale_width", height=WIDGET_HEIGHT)
 power_readout = Div(sizing_mode="scale_width", height=WIDGET_HEIGHT)
 
 # Why callback so slow? <shakes fist at Bokeh>
@@ -264,7 +293,7 @@ plot.on_event(Tap, add_point)
 plot.on_event(DoubleTap, lambda event: add_point(event, sink=True))
 
 init_buttons = row(square_button, hex_button, rand_mesh_button)
-controls = column(title_card,
+controls = column(power_readout,
                   init_buttons,
                   res_slider,
                   radius_slider,
@@ -272,9 +301,9 @@ controls = column(title_card,
                   step_button,
                   solve_button,
                   width=CONTROL_WIDTH)
-view_panel = column(plot,
-                    power_readout)
-final_form = row(controls, view_panel)
+# view_panel = column(plot,
+#                     power_readout)
+final_form = row(controls, plot)
 
 
 # Instate a grid and push all to the server

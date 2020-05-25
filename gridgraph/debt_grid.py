@@ -168,7 +168,7 @@ class DebtGrid(Grid):
             if not edges:
                 return {**data, 'Is': [], 'ws': []}
             return {**data,
-                    'Is': [self.Is[a] for a, _ in edges],
+                    'Is': [1e3 * self.Is[a] for a, _ in edges],  # milliwatts
                     'ws': [self.elements[a].get_w() for a, _ in edges]}
         elif subgraph == 'nodes':
             return {**data,
