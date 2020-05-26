@@ -27,6 +27,7 @@ from gridgraph.utils import param_loader, grid_points_generator
 
 # >> Simulation Params Initialization << #
 VIEW_SIZE = 700
+PLOT_BOUNDARY = 0.05
 CONTROL_WIDTH = 500
 WIDGET_HEIGHT = 40
 COLORBAR_WIDTH = 30
@@ -44,35 +45,38 @@ RES_MIN = 3
 RES_MAX = 12
 INIT_RES = 7                           # elements per side or sqrt(elements)
 
-RADIUS_MAX = 0.34                                 # max allowable mesh size
-INIT_RADIUS = 1e-6 + params['L'] / (INIT_RES - 1)  # starting mesh length
+RADIUS_MAX = 1.6               # max allowable mesh size
+RADIUS_STEP = 0.05             # step size when adjusting mesh radius
+# INIT_RADIUS = 1e-6 + params['L'] / (INIT_RES - 1)  # starting mesh length
 
 FILL_COLOR = (10, 10, 35)
 
 
 class solver_state:
-    '''Empty container class for GUI state variables'''
-    pass
+    '''Container class for GUI-level state variables'''
+    def __init__(self):
+        self.last_power = -1
+        self.solver_running = False
+        self.grid_type = None
+        self.mygrid = None
+        self.power = None
 
 
 state = solver_state()
-state.last_power = -1
-state.solver_running = False
-state.grid_type = None
-state.mygrid = None
-state.power = None
-
 
 # >> Init. Bokeh GUI elements << #
-plot = Plot(x_range=Range1d(-.1, 1.1), y_range=Range1d(-.1, 1.1),
+plot = Plot(x_range=Range1d(-PLOT_BOUNDARY, params['L'] + PLOT_BOUNDARY),
+            y_range=Range1d(-PLOT_BOUNDARY, params['L'] + PLOT_BOUNDARY),
             height=VIEW_SIZE + 3 * COLORBAR_WIDTH,
             width=VIEW_SIZE,
             background_fill_color=FILL_COLOR)
 plot.background_fill_alpha = 1.0
 
 # Cell renderer #
-cell_source = ColumnDataSource(dict(xs=[[0, 1], [0, 1], [0, 0], [1, 1]],
-                                    ys=[[0, 0], [1, 1], [0, 1], [0, 1]]))
+cell_source = ColumnDataSource(dict(xs=[[0, params['L']], [0, params['L']],
+                                        [0, 0], [params['L'], params['L']]],
+                                    ys=[[0, 0], [params['L'], params['L']],
+                                        [0, params['L']], [0, params['L']]]))
 cell_glyph = MultiLine(xs='xs', ys='ys', line_width=1, line_color='silver')
 cell = GlyphRenderer(data_source=cell_source, glyph=cell_glyph)
 
@@ -118,6 +122,7 @@ sink_glyph = InvertedTriangle(x='x', y='y', line_color='white', line_width=1.0,
                               size=area_interpolator, fill_color=dP_colormap)
 sinks = GlyphRenderer(data_source=sink_source, glyph=sink_glyph)
 
+# Append all renderers to the plot object
 plot.renderers.append(cell)
 plot.renderers.append(mesh)
 plot.renderers.append(grid)
@@ -134,13 +139,14 @@ colorbar_theme = dict(location=(0,0),
                       major_label_text_color='black',
                       major_label_text_font_size='16px',
                       title_text_align='left',
-                      title_text_font_size='18px',
-                      title_text_baseline='ideographic')
+                      title_text_font_size='18px')
+
 grid_colorbar = ColorBar(color_mapper=grid_colormap['transform'],
-                         title='Grid Current [milliamps]',
+                         title='Wires: Current [milliamps]',
                          **colorbar_theme)
+
 node_colorbar = ColorBar(color_mapper=dP_colormap['transform'],
-                         title='Differential Power [watts/amp]',
+                         title='Nodes: Differential Power [watts/amp]',
                          **colorbar_theme)
 
 plot.add_layout(grid_colorbar, 'below')
@@ -153,7 +159,8 @@ def render(power=None):
     if power is None:
         state.power = state.mygrid.power()
 
-    power_readout.text = '<p style="font-size:24px"> 1 cm solar cell power output:\n' +\
+    power_readout.text = '<p style="font-size:24px">' +\
+        ' 1 cm solar cell power output:\n' +\
         str(max(0, round(state.power * 1e3, 3))) + ' milliwatts</p>'
 
     node_source.data = state.mygrid.graph_data('generators')
@@ -234,29 +241,44 @@ def add_point(event, sink=False):
     curdoc().add_next_tick_callback(adder)
 
 
-def set_radius(attr, old, new):
+def clear_targets():
+    stop_solver()
     for e in state.mygrid.elements:
         e.target = None
-    state.mygrid.change_radius(radius_slider.value)
-    stop_solver()
+
+
+def choose_radius(value, points):
+    '''Choose a radius value relative to the current number of grid points,
+    where 1.0 corresponds to the diameter of a circle with area L^2/N'''
+    area = params['L'] ** 2 / points
+    return value * 2 * np.sqrt(area / np.pi)
+
+
+def set_radius(new):
+    '''Adjust mesh radius based on slider value.'''
+    clear_targets()
+    state.mygrid.change_radius(choose_radius(new, res_slider.value ** 2))
     render()
 
 
-# >> Define Widgets << #
+# >> Widgets << #
 square_button = Button(label='Square Mesh', sizing_mode = "scale_width", height=WIDGET_HEIGHT)
 square_button.on_click(lambda: generate_grid(resolution=res_slider.value,
-                                             crit_radius=radius_slider.value,
+                                             crit_radius=choose_radius(radius_slider.value,
+                                                                res_slider.value ** 2),
                                              grid_type='square'))
 
 hex_button = Button(label='Hex Mesh', sizing_mode = "scale_width", height=WIDGET_HEIGHT)
 hex_button.on_click(lambda: generate_grid(resolution=res_slider.value,
-                                          crit_radius=radius_slider.value,
+                                          crit_radius=choose_radius(radius_slider.value,
+                                                                res_slider.value ** 2),
                                           grid_type='hex'))
 
 rand_mesh_button = Button(label='Random Mesh', sizing_mode="scale_width",
                           height=WIDGET_HEIGHT)
 rand_mesh_button.on_click(lambda: generate_grid(resolution=res_slider.value,
-                                                crit_radius=radius_slider.value,
+                                                crit_radius=choose_radius(radius_slider.value,
+                                                                res_slider.value ** 2),
                                                 grid_type='scatter'))
 
 rand_button = Button(label='Randomize Wires', sizing_mode="scale_width",
@@ -276,16 +298,15 @@ res_slider = Slider(title="Mesh Resolution", value=INIT_RES,
                     sizing_mode="scale_width", height=WIDGET_HEIGHT)
 res_slider.on_change('value', lambda attr, old, new:
                      generate_grid(resolution=res_slider.value,
-                                   crit_radius=radius_slider.value))
+                                   crit_radius=choose_radius(radius_slider.value,
+                                                        res_slider.value ** 2)))
 
-radius_slider = Slider(title="Longest Wire [centimeters]", value=INIT_RADIUS,
-                       start=0.0, end=RADIUS_MAX, step=0.01,
-                       sizing_mode="scale_width", height=WIDGET_HEIGHT)
-radius_slider.on_change('value', set_radius)
+radius_slider = Slider(title="Wire Longest Length", value=1.0,
+                       start=0.0, end=RADIUS_MAX, step=RADIUS_STEP,
+                       sizing_mode="scale_width", height=WIDGET_HEIGHT,
+                       show_value=False)
+radius_slider.on_change('value', lambda attr, old, new: set_radius(new))
 
-# title_card = Div(text='<p style="font-size:20px"> ' +\
-#                  '1 cm solar cell power output: </p>',
-#                  sizing_mode="scale_width", height=WIDGET_HEIGHT)
 power_readout = Div(sizing_mode="scale_width", height=WIDGET_HEIGHT)
 
 # Why callback so slow? <shakes fist at Bokeh>
@@ -301,13 +322,11 @@ controls = column(power_readout,
                   step_button,
                   solve_button,
                   width=CONTROL_WIDTH)
-# view_panel = column(plot,
-#                     power_readout)
 final_form = row(controls, plot)
 
 
 # Instate a grid and push all to the server
 generate_grid(resolution=res_slider.value,
-              crit_radius=radius_slider.value,
+              crit_radius=choose_radius(1, res_slider.value ** 2),
               grid_type=STARTING_GRID_TYPE)
 curdoc().add_root(final_form)
