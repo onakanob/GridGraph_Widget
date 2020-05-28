@@ -123,10 +123,9 @@ class DebtGrid(Grid):
                                                     0, self.params['L']])
         [e.update_Area(areas[i]) for i, e in enumerate(self.elements)]
 
-    def add_element(self, idx, coords, eclass, init_neighbors=True, sink=False):
+    def add_element(self, coords, eclass, init_neighbors=True, sink=False):
         """override add_element to accomodate expanded element init call."""
-        if idx is None:
-            idx = len(self)
+        idx = len(self)
         self.elements.append(eclass(idx=idx,
                                     coords=coords,
                                     A=self.A,

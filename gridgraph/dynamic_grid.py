@@ -68,23 +68,19 @@ class Grid():
         self.G = nx.DiGraph()
 
         if coordinates:
-            for i, coords in enumerate(coordinates):
-                self.add_element(idx=i,
-                                 coords=coords,
+            for coords in coordinates:
+                self.add_element(coords=coords,
                                  eclass=element_class,
                                  init_neighbors=False)
             self.change_radius(crit_radius)
 
     coords = property(fget=lambda self: [e.coords for e in self.elements])
 
-    def add_element(self, idx, coords, eclass, init_neighbors=True):
+    def add_element(self, coords, eclass, init_neighbors=True):
         '''Create a new element, add object and nodes to gir lists with index
         idx, and add edges to neighboring nodes if not supressed.
         Careful: this method may be overwritten entirely in child classes.'''
-        # TODO index handling is dangerout - the element could end up at the
-        # wrong indexed position in the self.elements array.
-        if idx is None:
-            idx = len(self)
+        idx = len(self)
         self.elements.append(eclass(idx=idx,
                                     coords=coords,
                                     A=self.A,
