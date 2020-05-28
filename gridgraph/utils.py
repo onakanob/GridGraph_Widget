@@ -4,10 +4,123 @@ import pickle
 import logging
 from functools import partial
 
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 import numpy as np
 from autograd.numpy.numpy_boxes import ArrayBox as boxtype
 import imageio
+from scipy.spatial import Voronoi, voronoi_plot_2d
+
+
+def bounded_voronoi_vertices(points, bounding_box, show_plot=False):
+    '''Return the 2D polynomial vertices of the voronoi tile about each point in a
+    point cloud, bounded by a rectangle.
+    points: list of tuples (x, y)
+    bounding_box: [xmin, xmax, ymin, ymax]'''
+    def box_reflections(points, bounding_box):
+        '''Augment points by reflecting over the bounding box edges.
+        Code by Flabetvibes at https://tinyurl.com/y3lwr6k4 (StackOverflow)'''
+        points_left = np.copy(points)
+        points_left[:, 0] = bounding_box[0] - (points_left[:, 0] -
+                                               bounding_box[0])
+        points_right = np.copy(points)
+        points_right[:, 0] = bounding_box[1] + (bounding_box[1] -
+                                                points_right[:, 0])
+        points_down = np.copy(points)
+        points_down[:, 1] = bounding_box[2] - (points_down[:, 1] -
+                                               bounding_box[2])
+        points_up = np.copy(points)
+        points_up[:, 1] = bounding_box[3] + (bounding_box[3] - points_up[:, 1])
+        return np.append(points,
+                         np.append(np.append(points_left,
+                                             points_right,
+                                             axis=0),
+                                   np.append(points_down,
+                                             points_up,
+                                             axis=0),
+                                   axis=0),
+                         axis=0)
+
+    count = len(points)  # Original number of points
+    points = box_reflections(np.array(points), bounding_box)
+    vor = Voronoi(points)
+    if show_plot:
+        voronoi_plot_2d(vor)
+
+    my_regions = vor.point_region[:count]
+    region_vertex_idx = [vor.regions[r] for r in my_regions]
+    return [vor.vertices[v] for v in region_vertex_idx]
+
+
+def bounded_voronoi_areas(points, bounding_box, show_plot=False):
+    def PolyArea(points):
+        x = points[:, 0]
+        y = points[:, 1]
+        return 0.5 *\
+            np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+
+    vx_coords = bounded_voronoi_vertices(points, bounding_box,
+                                         show_plot=show_plot)
+    areas = [PolyArea(points) for points in vx_coords]
+    return areas
+
+
+def grid_points_generator(resolution, size=1, type='square'):
+    '''return an array of tuple pairs of coordinates.
+    type: one of square, rand, scatter, triangle, or hex'''
+    if type == 'square':
+        locs = np.linspace(0, size * (resolution - 1) / resolution,
+                           resolution) + (size / (2 * resolution))
+        grid = []
+        for y in locs:
+            for x in locs:
+                grid.append((x, y))
+        return grid
+    elif (type == 'rand') | (type == 'scatter'):
+        # Generate the same number of points as the equiv.-size square:
+        points = [tuple(np.random.rand(2) * size) for _ in
+                  range(resolution**2)]
+        if type == 'scatter':
+            vx_coords = bounded_voronoi_vertices(points, [0, size, 0, size])
+            points = [vxs.mean(0) for vxs in vx_coords]
+        return points
+    elif type == 'triangle':
+        raise ValueError('Triangle grid is not implemented.')
+    elif type == 'hex':
+        '''Generate an array of close-packed points.'''
+        rounder = np.ceil  # function for rounding to an integer point count
+        # basic unit x = 1/2 distance between nodes
+        x = size * np.sqrt(1 / (2 * np.sqrt(3) * (resolution ** 2)))
+        # first set of x coordinates
+        evens_count = rounder((size - x / 2) / (2 * x)).astype(int)
+        evens = [(x / 2 + 2 * i * x) for i in range(evens_count)]
+        # second set of x coordinates
+        odds_count = rounder((size - 3 * x / 2) / (2 * x)).astype(int)
+        odds = [(3 * x / 2 + 2 * i * x) for i in range(odds_count)]
+        # y coordinates
+        row_count = rounder((size - np.sqrt(3) * x / 2) / (np.sqrt(3) * x)).astype(int)
+        rows = [np.sqrt(3) * x / 2 + i * np.sqrt(3) * x for i in range(row_count)]
+
+        points = []
+        for i, y in enumerate(rows):
+            if i % 2:           # append an odd row
+                [points.append((x, y)) for x in odds]
+            else:               # append an even row
+                [points.append((x, y)) for x in evens]
+        points = np.array(points)
+        # center the points in the plane, then return
+        points = points + ([size / 2, size / 2] - points.mean(0))
+        return [(x, y) for x, y in points]  # Ugly
+    elif type == 'vias':
+        '''Cheater! Return hardcode location estimates of positive vias.'''
+        SIZE = 2000             # Rough cell size in px
+        horz_locs = [n / SIZE for n in [185, 511, 837, 1163, 1489, 1815]]
+        vert_locs = [n / SIZE for n in [286, 762, 1238, 1714]]
+        points = []
+        [[points.append((x, y)) for y in vert_locs] for x in horz_locs]
+        return points
+    else:
+        raise ValueError('Grid type ' + str(type) +
+                         ' is not valid.')
 
 
 def param_loader(path):
