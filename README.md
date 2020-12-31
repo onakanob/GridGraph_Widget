@@ -11,3 +11,4 @@ Requires: numpy, scipy, bokeh, colorcet, autograd, networkx, imageio
 This widget runs in a local python instance using the bokeh package. With python and requirements installed, run the widget with:
 > \>> bokeh serve --show grid_widget.py
 
+![GUI Screenshot](https://github.com/onakanob/GridGraph_Widget/blob/master/screenshot.PNG)
