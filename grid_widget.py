@@ -10,7 +10,7 @@ import numpy as np
 
 from bokeh.io import curdoc
 from bokeh.layouts import column, row
-from bokeh.models import Plot, Circle, InvertedTriangle, Range1d,\
+from bokeh.models import Plot, Scatter, Range1d,\
     MultiLine, ColumnDataSource, GlyphRenderer, ColorBar
 from bokeh.models.widgets import Button, Slider, Div
 from bokeh.models.transforms import LinearInterpolator
@@ -112,14 +112,16 @@ dP_colormap = linear_cmap('dPs', cc.kgy, low=.2, high=params['Voc'],
 
 # Node renderer #
 node_source = ColumnDataSource()
-node_glyph = Circle(x='x', y='y', line_color='white', line_width=0.5,
-                    size=area_interpolator, fill_color=dP_colormap)
+node_glyph = Scatter(x='x', y='y', marker='circle', line_color='white',
+                     line_width=0.5, size=area_interpolator,
+                     fill_color=dP_colormap)
 nodes = GlyphRenderer(data_source=node_source, glyph=node_glyph)
 
 # Sink renderer #
 sink_source = ColumnDataSource()
-sink_glyph = InvertedTriangle(x='x', y='y', line_color='white', line_width=1.0,
-                              size=area_interpolator, fill_color=dP_colormap)
+sink_glyph = Scatter(x='x', y='y', marker='inverted_triangle',
+                     line_color='white', line_width=1.0,
+                     size=area_interpolator, fill_color=dP_colormap)
 sinks = GlyphRenderer(data_source=sink_source, glyph=sink_glyph)
 
 # Append all renderers to the plot object
